@@ -11,10 +11,20 @@ dist/
 build/
 .eggs/
 
-# Environment
+# Environment & Secrets
 .env
 .env.local
 .env.*.local
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+*.p12
+*.secret
+*credentials*.json
+client_secret*.json
+id_rsa*
 
 # Logs
 logs/

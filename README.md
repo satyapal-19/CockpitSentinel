@@ -25,7 +25,7 @@
 | **Drowsiness**    | Eye closure, yawning, looking away | MediaPipe Face Landmarker → EAR, MAR, head yaw               |
 | **Distraction**   | Phone use, smoking                 | YOLOv8 + YOLOWorld object detection                           |
 | **Risk Scoring**  | 4-level risk assessment            | Weighted signal fusion → SAFE / CAUTION / WARNING / CRITICAL |
-| **Stabilization** | False alarm reduction              | Signals must persist for 3+ consecutive frames                |
+| **Stabilization** | Temporal window (2–3s analysis)   | Multi-second window prevents blink/flicker alarms; clears instantly on attentive return |
 
 ## Architecture
 
@@ -141,11 +141,12 @@ Press **Q** or **Esc** to stop the monitor.
 
 ### What You'll See
 
-The monitor displays a live video feed with an overlay showing:
+The monitor displays a live video feed with an interactive dashboard overlay:
 
-- **Risk level** and score (color-coded)
-- **Active signals** (e.g., "yawning", "phone detected")
-- **Real-time metrics** — EAR, MAR, and head yaw angle
+- **Dashboard HUD**: Exact **Total Trip Time** (`TRIP: HH:MM:SS`), **Attention Index** (`XX.X% ATTENTIVE`), and real-time **FPS**.
+- **Distraction Bounding Boxes**: Clear labeled bounding boxes with confidence tags around detected cell phones (cyan) and smoking items (orange).
+- **Risk Level & Alarm Perimeter**: Color-coded status badge and perimeter alarm glow (Orange for Warning, Red for Critical) that clears immediately upon returning to attentive driving.
+- **Telemetry Bar**: Real-time EAR, MAR, head yaw angle, and active duration counters for each distraction signal.
 
 ## Configuration
 
@@ -155,19 +156,21 @@ All runtime settings live in [`configs/`](configs/):
 | ----------------------------------------------- | ------------------------------------------------------- |
 | [`drowsiness.yaml`](configs/drowsiness.yaml)   | EAR/MAR thresholds, head yaw limit, frame stabilization |
 | [`distraction.yaml`](configs/distraction.yaml) | Phone/smoking confidence thresholds, smoking labels     |
-| [`alerts.yaml`](configs/alerts.yaml)           | Signal weights and risk level thresholds                |
+| [`alerts.yaml`](configs/alerts.yaml)           | Signal weights, risk levels, temporal window duration   |
 | [`models.yaml`](configs/models.yaml)           | Model paths and registry                                |
 | [`logging.yaml`](configs/logging.yaml)         | Log format, rotation, and output                        |
 
-### Risk Scoring
+### Risk Scoring & Temporal Analysis
 
-| Signal           | Weight | Threshold         |
-| ---------------- | ------ | ----------------- |
-| Eyes closed      | 3      | EAR < 0.22        |
-| Yawning          | 2      | MAR > 0.60        |
-| Looking away     | 2      | Head yaw > 30°   |
-| Phone detected   | 4      | Confidence > 0.35 |
-| Smoking detected | 3      | Confidence > 0.20 |
+Alerts are evaluated over a **2.0 to 3.0 second temporal window** (configurable via `--time-window` or `alerts.yaml`). Transient eye blinks (<0.4s) or quick glances (<1.0s) will not trigger false alarms.
+
+| Signal           | Weight | Threshold         | Temporal Confirmation |
+| ---------------- | ------ | ----------------- | --------------------- |
+| Eyes closed      | 3      | EAR < 0.22        | ≥ 2.0s sustained      |
+| Yawning          | 2      | MAR > 0.60        | ≥ 2.5s sustained      |
+| Looking away     | 2      | Head yaw > 30°   | ≥ 2.0s sustained      |
+| Phone detected   | 4      | Confidence > 0.40 | ≥ 2.0s sustained      |
+| Smoking detected | 3      | Confidence > 0.35 | ≥ 2.0s sustained      |
 
 **Risk levels:** SAFE (< 2) · CAUTION (≥ 2) · WARNING (≥ 4) · CRITICAL (≥ 6)
 

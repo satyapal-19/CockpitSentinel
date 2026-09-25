@@ -67,3 +67,32 @@ def test_distraction_detector_supports_device_and_context_manager():
         analysis = detector.analyze(np.zeros((120, 160, 3), dtype=np.uint8))
         assert not analysis.signals.phone_detected
         assert not analysis.signals.smoking_detected
+
+
+class FakeBoxWithCoords:
+    def __init__(
+        self, class_index: int, confidence: float, xyxy: tuple[int, int, int, int]
+    ) -> None:
+        self.cls = np.array([class_index])
+        self.conf = np.array([confidence])
+        self.xyxy = np.array([xyxy])
+
+
+def test_distraction_detector_extracts_bounding_boxes():
+    phone_box = FakeBoxWithCoords(67, 0.85, (10, 20, 100, 150))
+    phone_model = FakeModel(FakeResult({67: "cell phone"}, [phone_box]))
+    smoking_model = FakeModel(FakeResult({0: "cigarette"}, []))
+
+    detector = DistractionDetector(
+        Path("phone.pt"),
+        Path("smoking.pt"),
+        phone_model=phone_model,
+        smoking_model=smoking_model,
+    )
+
+    analysis = detector.analyze(np.zeros((480, 640, 3), dtype=np.uint8))
+    assert analysis.signals.phone_detected
+    assert len(analysis.detections) == 1
+    assert analysis.detections[0].box == (10, 20, 100, 150)
+    assert analysis.detections[0].label == "cell phone"
+    assert analysis.detections[0].confidence == pytest.approx(0.85)

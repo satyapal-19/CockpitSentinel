@@ -24,6 +24,7 @@ class AlertPolicy:
     caution_score: int
     warning_score: int
     critical_score: int
+    time_window_seconds: float = 0.0
 
     def assess(self, signals: DriverSignals) -> RiskAssessment:
         return assess_risk(
@@ -40,6 +41,7 @@ DEFAULT_POLICY = AlertPolicy(
     caution_score=2,
     warning_score=4,
     critical_score=6,
+    time_window_seconds=0.0,
 )
 
 
@@ -77,9 +79,13 @@ def load_alert_policy(path: Path) -> AlertPolicy:
     if not caution_score < warning_score < critical_score:
         raise PolicyConfigurationError("Alert thresholds must increase from caution to critical.")
 
+    time_window_raw = raw_config.get("time_window_seconds", 0.0)
+    time_window_seconds = float(time_window_raw) if time_window_raw is not None else 0.0
+
     return AlertPolicy(
         weights=weights,
         caution_score=caution_score,
         warning_score=warning_score,
         critical_score=critical_score,
+        time_window_seconds=time_window_seconds,
     )

@@ -23,11 +23,20 @@ class ObjectDetector(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class DetectionBox:
+    """Bounding box coordinates, label, and confidence score."""
+
+    box: tuple[int, int, int, int]
+    label: str
+    confidence: float
+
+
+@dataclass(frozen=True, slots=True)
 class DistractionConfig:
     """Confidence thresholds and text labels for distraction detection."""
 
-    phone_confidence_threshold: float = 0.35
-    smoking_confidence_threshold: float = 0.20
+    phone_confidence_threshold: float = 0.40
+    smoking_confidence_threshold: float = 0.35
     smoking_labels: tuple[str, ...] = ("cigarette", "smoking", "vape")
 
     def __post_init__(self) -> None:
@@ -46,6 +55,7 @@ class DistractionAnalysis:
     signals: DriverSignals
     phone_confidence: float | None = None
     smoking_confidence: float | None = None
+    detections: tuple[DetectionBox, ...] = ()
 
 
 def load_distraction_config(path: Path) -> DistractionConfig:
@@ -110,17 +120,19 @@ class DistractionDetector:
         if self.device is not None:
             predict_kwargs["device"] = self.device
 
-        phone_confidence = _highest_confidence(
+        phone_confidence, phone_boxes = _extract_detections(
             self._phone_model(
                 frame, conf=self.config.phone_confidence_threshold, **predict_kwargs
             ),
             {"cell phone"},
+            frame_shape=frame.shape[:2],
         )
-        smoking_confidence = _highest_confidence(
+        smoking_confidence, smoking_boxes = _extract_detections(
             self._smoking_model(
                 frame, conf=self.config.smoking_confidence_threshold, **predict_kwargs
             ),
             set(self.config.smoking_labels),
+            frame_shape=frame.shape[:2],
         )
         return DistractionAnalysis(
             signals=DriverSignals(
@@ -129,6 +141,7 @@ class DistractionDetector:
             ),
             phone_confidence=phone_confidence,
             smoking_confidence=smoking_confidence,
+            detections=tuple(phone_boxes + smoking_boxes),
         )
 
     @staticmethod
@@ -152,9 +165,19 @@ class DistractionDetector:
         return model
 
 
-def _highest_confidence(results: Sequence[Any], target_labels: set[str]) -> float | None:
+def _extract_detections(
+    results: Sequence[Any],
+    target_labels: set[str],
+    frame_shape: tuple[int, int] | None = None,
+) -> tuple[float | None, list[DetectionBox]]:
+    """Extract highest confidence score and bounding boxes for matching target labels."""
     highest: float | None = None
+    detections: list[DetectionBox] = []
     normalized_targets = {label.casefold() for label in target_labels}
+
+    frame_h, frame_w = frame_shape if frame_shape is not None else (0, 0)
+    frame_area = frame_h * frame_w
+
     for result in results:
         boxes = getattr(result, "boxes", None)
         if boxes is None:
@@ -162,10 +185,40 @@ def _highest_confidence(results: Sequence[Any], target_labels: set[str]) -> floa
         names = getattr(result, "names", {})
         for box in boxes:
             class_index = int(box.cls[0])
-            label = str(names[class_index]).casefold()
-            if label not in normalized_targets:
+            raw_label = str(names.get(class_index, class_index))
+            if raw_label.casefold() not in normalized_targets:
                 continue
+
             confidence = float(box.conf[0])
+
+            coords = (0, 0, 0, 0)
+            xyxy = getattr(box, "xyxy", None)
+            if xyxy is not None and len(xyxy) > 0:
+                coords_raw = xyxy[0]
+                if hasattr(coords_raw, "tolist"):
+                    coords_raw = coords_raw.tolist()
+                coords = (
+                    int(coords_raw[0]),
+                    int(coords_raw[1]),
+                    int(coords_raw[2]),
+                    int(coords_raw[3]),
+                )
+
+                # Heuristic: filter large smoking boxes (>25% frame) which are false positives
+                if frame_area > 0 and raw_label.casefold() in {"cigarette", "smoking", "vape"}:
+                    box_w = max(0, coords[2] - coords[0])
+                    box_h = max(0, coords[3] - coords[1])
+                    if (box_w * box_h) > (0.25 * frame_area):
+                        continue
+
             if highest is None or confidence > highest:
                 highest = confidence
+
+            detections.append(DetectionBox(box=coords, label=raw_label, confidence=confidence))
+
+    return highest, detections
+
+
+def _highest_confidence(results: Sequence[Any], target_labels: set[str]) -> float | None:
+    highest, _ = _extract_detections(results, target_labels)
     return highest

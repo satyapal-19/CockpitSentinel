@@ -9,3 +9,5 @@ thresholds:
   caution: 2
   warning: 4
   critical: 6
+
+time_window_seconds: 2.0

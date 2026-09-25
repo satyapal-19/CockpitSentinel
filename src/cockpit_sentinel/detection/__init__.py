@@ -1,6 +1,7 @@
 """Object-detection components for driver distraction."""
 
 from cockpit_sentinel.detection.distraction import (
+    DetectionBox,
     DistractionAnalysis,
     DistractionConfig,
     DistractionDetector,
@@ -8,6 +9,7 @@ from cockpit_sentinel.detection.distraction import (
 )
 
 __all__ = [
+    "DetectionBox",
     "DistractionAnalysis",
     "DistractionConfig",
     "DistractionDetector",

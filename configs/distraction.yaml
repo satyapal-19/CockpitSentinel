@@ -1,5 +1,5 @@
-phone_confidence_threshold: 0.35
-smoking_confidence_threshold: 0.20
+phone_confidence_threshold: 0.40
+smoking_confidence_threshold: 0.35
 smoking_labels:
   - cigarette
   - smoking
