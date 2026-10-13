@@ -140,11 +140,22 @@ class DatabaseManager:
                     total_trips INTEGER DEFAULT 0,
                     total_distance_km REAL DEFAULT 0.0,
                     total_alerts INTEGER DEFAULT 0,
+                    face_embedding TEXT,
+                    face_registered INTEGER DEFAULT 0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
                 """
             )
+            # Safe migration for existing SQLite database files
+            try:
+                cur.execute("ALTER TABLE drivers ADD COLUMN face_embedding TEXT")
+            except Exception:
+                pass
+            try:
+                cur.execute("ALTER TABLE drivers ADD COLUMN face_registered INTEGER DEFAULT 0")
+            except Exception:
+                pass
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS routes (
@@ -222,6 +233,9 @@ class DatabaseManager:
                 d = dict(r)
                 if isinstance(d.get("thresholds"), str):
                     d["thresholds"] = json.loads(d["thresholds"])
+                if isinstance(d.get("face_embedding"), str) and d["face_embedding"]:
+                    d["face_embedding"] = json.loads(d["face_embedding"])
+                d["face_registered"] = bool(d.get("face_registered", 0))
                 drivers.append(DriverProfile(**d))
             return drivers
 
@@ -238,6 +252,9 @@ class DatabaseManager:
             d = dict(row)
             if isinstance(d.get("thresholds"), str):
                 d["thresholds"] = json.loads(d["thresholds"])
+            if isinstance(d.get("face_embedding"), str) and d["face_embedding"]:
+                d["face_embedding"] = json.loads(d["face_embedding"])
+            d["face_registered"] = bool(d.get("face_registered", 0))
             return DriverProfile(**d)
 
     def save_driver(self, profile: DriverProfile) -> DriverProfile:
@@ -251,13 +268,18 @@ class DatabaseManager:
 
         with self._get_sqlite_conn() as conn:
             thresholds_json = json.dumps(doc["thresholds"])
+            face_emb_json = (
+                json.dumps(doc["face_embedding"]) if doc.get("face_embedding") else None
+            )
+            face_reg_int = 1 if doc.get("face_registered") else 0
             conn.execute(
                 """
                 INSERT INTO drivers (
                     id, name, license_number, experience_years, status,
                     avatar_url, phone, notes, thresholds, rating, safety_score,
-                    total_trips, total_distance_km, total_alerts, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    total_trips, total_distance_km, total_alerts, face_embedding,
+                    face_registered, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name,
                     license_number=excluded.license_number,
@@ -272,6 +294,8 @@ class DatabaseManager:
                     total_trips=excluded.total_trips,
                     total_distance_km=excluded.total_distance_km,
                     total_alerts=excluded.total_alerts,
+                    face_embedding=excluded.face_embedding,
+                    face_registered=excluded.face_registered,
                     updated_at=excluded.updated_at
                 """,
                 (
@@ -289,6 +313,8 @@ class DatabaseManager:
                     doc["total_trips"],
                     doc["total_distance_km"],
                     doc["total_alerts"],
+                    face_emb_json,
+                    face_reg_int,
                     doc["created_at"],
                     doc["updated_at"],
                 ),

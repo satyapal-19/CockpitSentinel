@@ -57,6 +57,12 @@ class DriverProfile(BaseModel):
     total_trips: int = Field(default=0, ge=0)
     total_distance_km: float = Field(default=0.0, ge=0.0)
     total_alerts: int = Field(default=0, ge=0)
+    face_embedding: list[float] | None = Field(
+        default=None, description="512-D L2-normalized FaceNet embedding vector"
+    )
+    face_registered: bool = Field(
+        default=False, description="Whether driver facial profile is enrolled"
+    )
     created_at: str = Field(default_factory=get_current_iso_time)
     updated_at: str = Field(default_factory=get_current_iso_time)
 

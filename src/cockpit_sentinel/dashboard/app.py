@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import os
 from pathlib import Path
 from typing import Any
 
+import cv2
+import numpy as np
 from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -63,6 +66,10 @@ class DriverUpdateRequest(BaseModel):
     thresholds: DriverThresholds | None = None
     rating: float | None = None
     safety_score: int | None = None
+
+
+class FaceEnrollRequest(BaseModel):
+    image_base64: str = Field(..., description="Base64-encoded image data string")
 
 
 class RouteCreateRequest(BaseModel):
@@ -195,6 +202,81 @@ async def delete_driver(driver_id: str) -> dict[str, Any]:
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
     return {"deleted": True, "id": driver_id}
+
+
+@app.post("/api/drivers/{driver_id}/enroll-face")
+async def enroll_driver_face(driver_id: str, req: FaceEnrollRequest) -> dict[str, Any]:
+    """Enroll or update a driver's facial biometric embedding from base64 image data."""
+    db = get_db_manager()
+    driver = db.get_driver(driver_id)
+    if not driver:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
+
+    try:
+        header_split = req.image_base64.split(",")
+        raw_b64 = header_split[1] if len(header_split) > 1 else header_split[0]
+        img_bytes = base64.b64decode(raw_b64)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise ValueError("Could not decode image from provided base64 data")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid image format: {exc}"
+        )
+
+    try:
+        from cockpit_sentinel.recognition import get_face_identifier
+
+        identifier = get_face_identifier()
+        updated_driver = identifier.enroll_driver_face(driver, img)
+        db.save_driver(updated_driver)
+        return {
+            "success": True,
+            "message": f"Facial biometrics enrolled successfully for {updated_driver.name}",
+            "driver_id": updated_driver.id,
+            "face_registered": True,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@app.post("/api/identify-face")
+async def identify_face(req: FaceEnrollRequest) -> dict[str, Any]:
+    """Identify the driver in the provided image against registered database profiles."""
+    try:
+        header_split = req.image_base64.split(",")
+        raw_b64 = header_split[1] if len(header_split) > 1 else header_split[0]
+        img_bytes = base64.b64decode(raw_b64)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise ValueError("Could not decode image from provided base64 data")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid image data: {exc}"
+        )
+
+    from cockpit_sentinel.recognition import get_face_identifier
+
+    db = get_db_manager()
+    drivers = db.list_drivers()
+    identifier = get_face_identifier()
+
+    matched_driver, score = identifier.identify_driver(img, drivers, threshold=0.55)
+    if matched_driver:
+        return {
+            "identified": True,
+            "driver": matched_driver.to_dict(),
+            "confidence": round(score, 3),
+            "confidence_percent": int(round(score * 100)),
+        }
+    return {
+        "identified": False,
+        "driver": None,
+        "confidence": round(score, 3),
+        "message": "No registered driver matched",
+    }
 
 
 # =============================================================================

@@ -237,10 +237,14 @@ class LiveMonitor:
         distraction_detector: DistractionAnalyzer | None = None,
         time_window_seconds: float | None = None,
         signal_thresholds: Mapping[str, float] | None = None,
+        driver_name: str | None = None,
+        face_verified: bool = False,
     ) -> None:
         self._detector = detector
         self._policy = policy
         self._distraction_detector = distraction_detector
+        self.driver_name = driver_name
+        self.face_verified = face_verified
 
         if time_window_seconds is not None:
             self._time_window_seconds = max(0.0, time_window_seconds)
@@ -257,6 +261,47 @@ class LiveMonitor:
     def trip_tracker(self) -> TripTracker:
         """Access the underlying trip tracker."""
         return self._trip_tracker
+
+    def apply_driver_profile(self, driver: Any) -> None:
+        """Dynamically adapt detector, policy thresholds, and verified driver status."""
+        self.driver_name = getattr(driver, "name", None)
+        self.face_verified = True
+        t = getattr(driver, "thresholds", None)
+        if not t:
+            return
+
+        if hasattr(self._detector, "config"):
+            current_cfg = getattr(self._detector, "config")
+            min_frames = getattr(current_cfg, "minimum_consecutive_frames", 3)
+            self._detector.config = DrowsinessConfig(
+                eye_aspect_ratio_threshold=t.eye_aspect_ratio_threshold,
+                mouth_aspect_ratio_threshold=t.mouth_aspect_ratio_threshold,
+                head_yaw_threshold_degrees=t.head_yaw_threshold_degrees,
+                minimum_consecutive_frames=min_frames,
+            )
+
+        if self._distraction_detector is not None and hasattr(self._distraction_detector, "config"):
+            current_d_cfg = getattr(self._distraction_detector, "config")
+            smoking_labels = getattr(
+                current_d_cfg, "smoking_labels", ("cigarette", "smoking", "smoke")
+            )
+            self._distraction_detector.config = DistractionConfig(
+                phone_confidence_threshold=t.phone_confidence_threshold,
+                smoking_confidence_threshold=t.smoking_confidence_threshold,
+                smoking_labels=smoking_labels,
+            )
+
+        self._time_window_seconds = t.time_window_seconds
+        self._policy = AlertPolicy(
+            weights=self._policy.weights,
+            caution_score=t.caution_score,
+            warning_score=t.warning_score,
+            critical_score=t.critical_score,
+            time_window_seconds=t.time_window_seconds,
+        )
+        self._temporal_stabilizer = TemporalSignalStabilizer(
+            window_seconds=self._time_window_seconds,
+        )
 
     def process(self, frame: np.ndarray, timestamp: float | None = None) -> MonitorFrame:
         analysis = self._detector.analyze(frame)
@@ -285,6 +330,8 @@ class LiveMonitor:
             distraction=distraction,
             trip_stats=trip_stats,
             active_durations=active_durations,
+            driver_name=self.driver_name,
+            face_verified=self.face_verified,
         )
         return MonitorFrame(
             analysis=analysis,
@@ -315,6 +362,8 @@ def draw_monitor_overlay(
     distraction: DistractionAnalysis | None = None,
     trip_stats: TripStats | None = None,
     active_durations: Mapping[str, float] | None = None,
+    driver_name: str | None = None,
+    face_verified: bool = False,
 ) -> np.ndarray:
     """Draw readable dashboard status, telemetry, trip timer, and bounding boxes."""
 
@@ -361,7 +410,7 @@ def draw_monitor_overlay(
         cv2.rectangle(image, (0, 0), (width - 1, height - 1), (22, 137, 243), 3)
 
     # 3. Top Dashboard Header
-    header_h = 75 if height < 300 else 85
+    header_h = 78 if height < 300 else 88
     cv2.rectangle(image, (0, 0), (width, header_h), (22, 22, 22), thickness=-1)
     cv2.line(image, (0, header_h), (width, header_h), (60, 60, 60), 1)
 
@@ -369,9 +418,9 @@ def draw_monitor_overlay(
     cv2.putText(
         image,
         f"RISK: {assessment.level.upper()} ({assessment.score})",
-        (14, 28),
+        (14, 25),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.65,
+        0.60,
         color,
         2,
         cv2.LINE_AA,
@@ -382,13 +431,38 @@ def draw_monitor_overlay(
     cv2.putText(
         image,
         f"STATUS: {status_str}",
-        (14, 54),
+        (14, 48),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.50,
+        0.48,
         status_color,
         1,
         cv2.LINE_AA,
     )
+
+    if driver_name:
+        drv_tag = f"DRIVER: {driver_name.upper()}" + (" [ID VERIFIED]" if face_verified else "")
+        drv_color = (80, 230, 150) if face_verified else (200, 200, 200)
+        cv2.putText(
+            image,
+            drv_tag,
+            (14, 70),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.44,
+            drv_color,
+            1,
+            cv2.LINE_AA,
+        )
+    elif face_verified is False:
+        cv2.putText(
+            image,
+            "CABIN: SCANNING DRIVER...",
+            (14, 70),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.42,
+            (150, 150, 150),
+            1,
+            cv2.LINE_AA,
+        )
 
     # Right side: Trip Time, Attention %, FPS
     if trip_stats is not None:
@@ -396,7 +470,7 @@ def draw_monitor_overlay(
         cv2.putText(
             image,
             f"TRIP: {trip_stats.formatted_trip_time}",
-            (right_x, 26),
+            (right_x, 25),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.55,
             (240, 240, 240),
@@ -416,7 +490,7 @@ def draw_monitor_overlay(
         cv2.putText(
             image,
             f"{trip_stats.fps:.1f} FPS",
-            (right_x, 68),
+            (right_x, 70),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.42,
             (160, 160, 160),
@@ -482,6 +556,8 @@ def run_live_monitor(
     time_window_seconds: float = 2.0,
     driver_id: str | None = None,
     route_id: str | None = None,
+    auto_identify: bool = True,
+    face_check_interval: int = 25,
 ) -> None:
     """Open a webcam or video file and show processed frames until Q or Esc is pressed."""
 
@@ -497,30 +573,96 @@ def run_live_monitor(
     trip_id = f"trp-{int(time.time())}"
     trip_start_iso = datetime.now(timezone.utc).isoformat()
 
-    if driver_id:
-        try:
-            from cockpit_sentinel.database.client import get_db_manager
-            from cockpit_sentinel.database.models import AlertIncident, TripSession
+    try:
+        from cockpit_sentinel.database.client import get_db_manager
+        from cockpit_sentinel.database.models import AlertIncident, TripSession
 
-            db = get_db_manager()
+        db = get_db_manager()
+    except Exception as exc:
+        print(f"[DATABASE NOTICE] Operating without database synchronization: {exc}")
+        db = None
+
+    if db and driver_id:
+        try:
             driver_profile = db.get_driver(driver_id)
-            if route_id:
-                route_obj = db.get_route(route_id)
+        except Exception:
+            driver_profile = None
+
+    if db and route_id:
+        try:
+            route_obj = db.get_route(route_id)
+        except Exception:
+            route_obj = None
+
+    # Biometric face recognition initialization
+    face_identifier = None
+    enrolled_drivers = []
+    if db and auto_identify:
+        try:
+            from cockpit_sentinel.recognition import get_face_identifier
+
+            all_drivers = db.list_drivers()
+            enrolled_drivers = [
+                d
+                for d in all_drivers
+                if getattr(d, "face_registered", False) and getattr(d, "face_embedding", None)
+            ]
+            if enrolled_drivers:
+                face_identifier = get_face_identifier()
+                print(
+                    f"[FACE ID] Biometric scanner ready with {len(enrolled_drivers)} enrolled driver profile(s)."
+                )
         except Exception as exc:
-            print(f"[DATABASE NOTICE] Operating without database synchronization: {exc}")
-            db = None
+            print(f"[FACE ID NOTICE] In-cabin biometric identification unavailable: {exc}")
 
     monitor = LiveMonitor(
         detector,
         policy,
         distraction_detector,
         time_window_seconds=time_window_seconds,
+        driver_name=driver_profile.name if driver_profile else None,
+        face_verified=bool(driver_profile),
     )
+
+    if driver_profile:
+        monitor.apply_driver_profile(driver_profile)
+
+    frame_counter = 0
+
     try:
         while True:
             ok, frame = capture.read()
             if not ok:
                 break
+
+            frame_counter += 1
+
+            # Auto-identify driver entering cabin if not yet identified
+            if (
+                auto_identify
+                and face_identifier is not None
+                and enrolled_drivers
+                and driver_profile is None
+                and (frame_counter % face_check_interval == 0 or frame_counter == 5)
+            ):
+                matched, score = face_identifier.identify_driver(
+                    frame, enrolled_drivers, threshold=0.55
+                )
+                if matched:
+                    driver_profile = matched
+                    monitor.apply_driver_profile(matched)
+                    print("\n" + "=" * 64)
+                    print(f" CABIN ACCESS GRANTED: BIOMETRIC FACE VERIFIED!")
+                    print(f" Driver: {matched.name} ({matched.license_number})")
+                    print(f" Match Confidence: {int(score * 100)}% (threshold >= 55%)")
+                    print(
+                        f" Applied Personalized Thresholds: EAR={matched.thresholds.eye_aspect_ratio_threshold}, "
+                        f"MAR={matched.thresholds.mouth_aspect_ratio_threshold}, "
+                        f"Yaw={matched.thresholds.head_yaw_threshold_degrees} deg, "
+                        f"Window={matched.thresholds.time_window_seconds}s"
+                    )
+                    print("=" * 64 + "\n")
+
             processed = monitor.process(frame)
 
             # Audit logging of WARNING/CRITICAL incidents
@@ -702,6 +844,12 @@ def main() -> None:
         default=None,
         help="Route corridor ID for trip telemetry tracking.",
     )
+    parser.add_argument(
+        "--auto-identify",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Automatically detect driver's face in cabin and apply their profile (default: True).",
+    )
     args = parser.parse_args()
 
     model_path = args.model_path or resolve_model_path("face_landmarker.task", args.models_root)
@@ -822,6 +970,7 @@ def main() -> None:
                 time_window_seconds=time_window_sec,
                 driver_id=args.driver_id,
                 route_id=args.route_id,
+                auto_identify=args.auto_identify,
             )
     except KeyboardInterrupt:
         print("\nMonitor interrupted by user. Exiting cleanly.")

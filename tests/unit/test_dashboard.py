@@ -131,3 +131,33 @@ def test_api_trips_and_alerts_endpoints(client: TestClient):
     res_leaderboard = client.get("/api/leaderboard")
     assert res_leaderboard.status_code == 200
     assert len(res_leaderboard.json()) >= 1
+
+
+def test_api_face_enroll_and_identify(client: TestClient):
+    import base64
+    import cv2
+    import numpy as np
+
+    # Encode blank test image to base64
+    dummy_img = np.zeros((160, 160, 3), dtype=np.uint8)
+    _, buffer = cv2.imencode(".jpg", dummy_img)
+    b64_str = base64.b64encode(buffer).decode("utf-8")
+    b64_payload = f"data:image/jpeg;base64,{b64_str}"
+
+    # Non-existent driver returns 404
+    res_404 = client.post(
+        "/api/drivers/drv-unknown-999/enroll-face",
+        json={"image_base64": b64_payload},
+    )
+    assert res_404.status_code == 404
+
+    # Corrupt base64 string returns 400
+    res_bad = client.post("/api/identify-face", json={"image_base64": "not_valid_b64!!!"})
+    assert res_bad.status_code == 400
+
+    # Valid base64 frame identification check
+    res_ident = client.post("/api/identify-face", json={"image_base64": b64_payload})
+    assert res_ident.status_code == 200
+    data = res_ident.json()
+    assert "identified" in data
+

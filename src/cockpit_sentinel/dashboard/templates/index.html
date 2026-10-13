@@ -587,6 +587,70 @@
     </div>
   </div>
 
+  <!-- ========================================================================= -->
+  <!-- MODAL: ENROLL DRIVER FACE BIOMETRICS -->
+  <!-- ========================================================================= -->
+  <div id="faceEnrollModal" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div>
+          <h3 class="text-base font-bold text-white flex items-center space-x-2">
+            <i class="fa-solid fa-id-badge text-emerald-400"></i>
+            <span>Register Driver Facial Biometrics</span>
+          </h3>
+          <p id="face-enroll-driver-title" class="text-xs text-cyan-400 font-mono mt-0.5">Driver: --</p>
+        </div>
+        <button onclick="closeFaceEnrollModal()" class="text-slate-400 hover:text-white text-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <input type="hidden" id="face-enroll-driver-id">
+
+      <div class="space-y-3 text-xs">
+        <!-- Camera Preview Container -->
+        <div class="relative bg-black rounded-xl overflow-hidden border border-slate-700 h-56 flex items-center justify-center">
+          <video id="face-enroll-video" autoplay playsinline class="w-full h-full object-cover hidden"></video>
+          <img id="face-enroll-preview" class="w-full h-full object-cover hidden">
+          <canvas id="face-enroll-canvas" class="hidden"></canvas>
+          <div id="face-enroll-placeholder" class="text-center p-4 text-slate-400">
+            <i class="fa-solid fa-camera text-3xl text-slate-600 mb-2 block"></i>
+            <span>Click <strong>Start Camera</strong> or <strong>Upload Photo</strong> below</span>
+          </div>
+        </div>
+
+        <!-- Camera Controls -->
+        <div class="flex items-center justify-between gap-2">
+          <button type="button" onclick="startEnrollCamera()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center space-x-1.5 transition border border-slate-700">
+            <i class="fa-solid fa-video"></i>
+            <span>Start Camera</span>
+          </button>
+          <button type="button" onclick="captureEnrollSnapshot()" id="btn-snap" class="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center space-x-1.5 transition hidden">
+            <i class="fa-solid fa-camera"></i>
+            <span>Capture Snapshot</span>
+          </button>
+          <label class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center space-x-1.5 transition border border-slate-700 cursor-pointer">
+            <i class="fa-solid fa-upload"></i>
+            <span>Upload Photo</span>
+            <input type="file" id="face-file-input" accept="image/*" class="hidden" onchange="handleFaceFileUpload(event)">
+          </label>
+        </div>
+
+        <p id="face-enroll-status" class="text-[11px] text-slate-400 italic text-center min-h-[16px]"></p>
+      </div>
+
+      <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">
+        <button type="button" onclick="closeFaceEnrollModal()" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold">
+          Cancel
+        </button>
+        <button type="button" onclick="submitEnrolledFace()" id="btn-save-face" class="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center space-x-2 shadow-lg shadow-emerald-600/30 opacity-50 cursor-not-allowed" disabled>
+          <i class="fa-solid fa-check"></i>
+          <span>Save Face to Profile</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- JavaScript Frontend Logic -->
   <script>
     let globalData = {
@@ -857,6 +921,10 @@
                   <span class="text-slate-400">Temporal Alert Window:</span>
                   <span class="font-mono text-emerald-400 font-semibold">${t.time_window_seconds}s</span>
                 </div>
+              <!-- Biometric Cabin ID Status -->
+              <div class="flex items-center justify-between mt-3 text-[11px] pt-2 border-t border-slate-800/80">
+                <span class="text-slate-400">Cabin Face ID:</span>
+                ${d.face_registered ? '<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center"><i class="fa-solid fa-id-card mr-1"></i>Enrolled</span>' : '<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center"><i class="fa-solid fa-camera mr-1"></i>Enroll Face</span>'}
               </div>
             </div>
 
@@ -864,9 +932,13 @@
             <div class="flex items-center space-x-2 pt-2">
               <button onclick="openCalibrateModal('${d.id}')" class="flex-1 py-2 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center justify-center space-x-1.5 transition">
                 <i class="fa-solid fa-sliders"></i>
-                <span>Calibrate Thresholds</span>
+                <span>Calibrate</span>
               </button>
-              <button onclick="deleteDriver('${d.id}')" class="p-2 rounded-lg bg-slate-800 hover:bg-rose-900/60 hover:text-rose-400 text-slate-400 text-xs transition border border-slate-700">
+              <button onclick="openFaceEnrollModal('${d.id}')" class="py-2 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs transition border border-slate-700 flex items-center space-x-1" title="Register Face Biometrics">
+                <i class="fa-solid fa-camera"></i>
+                <span class="text-[10px]">Face</span>
+              </button>
+              <button onclick="deleteDriver('${d.id}')" class="p-2 rounded-lg bg-slate-800 hover:bg-rose-900/60 hover:text-rose-400 text-slate-400 text-xs transition border border-slate-700" title="Delete Profile">
                 <i class="fa-solid fa-trash-can"></i>
               </button>
             </div>
@@ -1243,6 +1315,192 @@
         await fetchData();
       } catch (err) {
         console.error(err);
+      }
+    }
+
+    let enrollStream = null;
+    let enrolledBase64Image = null;
+
+    function openFaceEnrollModal(driverId) {
+      const driver = globalData.drivers.find(d => d.id === driverId);
+      if (!driver) return;
+
+      document.getElementById('face-enroll-driver-id').value = driverId;
+      document.getElementById('face-enroll-driver-title').innerText = `Driver: ${driver.name} (${driver.license_number})`;
+      
+      const video = document.getElementById('face-enroll-video');
+      const preview = document.getElementById('face-enroll-preview');
+      const placeholder = document.getElementById('face-enroll-placeholder');
+      const btnSnap = document.getElementById('btn-snap');
+      const btnSave = document.getElementById('btn-save-face');
+      const statusText = document.getElementById('face-enroll-status');
+      const fileInput = document.getElementById('face-file-input');
+
+      if (fileInput) fileInput.value = '';
+      enrolledBase64Image = null;
+      video.classList.add('hidden');
+      preview.classList.add('hidden');
+      preview.src = '';
+      placeholder.classList.remove('hidden');
+      btnSnap.classList.add('hidden');
+      btnSave.classList.add('opacity-50', 'cursor-not-allowed');
+      btnSave.disabled = true;
+      statusText.innerText = driver.face_registered ? 'Driver currently has biometrics enrolled. Capture/upload new photo to re-enroll.' : 'No face enrolled yet. Capture or upload photo below.';
+      statusText.className = 'text-[11px] text-slate-400 italic text-center min-h-[16px]';
+
+      openModal('faceEnrollModal');
+    }
+
+    function closeFaceEnrollModal() {
+      if (enrollStream) {
+        enrollStream.getTracks().forEach(track => track.stop());
+        enrollStream = null;
+      }
+      const video = document.getElementById('face-enroll-video');
+      if (video) video.srcObject = null;
+      closeModal('faceEnrollModal');
+    }
+
+    async function startEnrollCamera() {
+      const video = document.getElementById('face-enroll-video');
+      const preview = document.getElementById('face-enroll-preview');
+      const placeholder = document.getElementById('face-enroll-placeholder');
+      const btnSnap = document.getElementById('btn-snap');
+      const statusText = document.getElementById('face-enroll-status');
+
+      try {
+        if (enrollStream) {
+          enrollStream.getTracks().forEach(track => track.stop());
+        }
+        enrollStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
+        });
+        video.srcObject = enrollStream;
+        video.classList.remove('hidden');
+        preview.classList.add('hidden');
+        placeholder.classList.add('hidden');
+        btnSnap.classList.remove('hidden');
+        statusText.innerText = 'Camera active. Look straight at the camera and click Capture Snapshot.';
+        statusText.className = 'text-[11px] text-cyan-400 text-center min-h-[16px] font-medium';
+      } catch (err) {
+        console.error('Camera access error:', err);
+        statusText.innerText = 'Unable to access camera (' + (err.name || err.message) + '). Use Upload Photo instead.';
+        statusText.className = 'text-[11px] text-rose-400 text-center min-h-[16px]';
+      }
+    }
+
+    function captureEnrollSnapshot() {
+      const video = document.getElementById('face-enroll-video');
+      const canvas = document.getElementById('face-enroll-canvas');
+      const preview = document.getElementById('face-enroll-preview');
+      const btnSnap = document.getElementById('btn-snap');
+      const btnSave = document.getElementById('btn-save-face');
+      const statusText = document.getElementById('face-enroll-status');
+
+      if (!video || !video.videoWidth) {
+        statusText.innerText = 'Camera frame not ready yet.';
+        return;
+      }
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      enrolledBase64Image = canvas.toDataURL('image/jpeg', 0.92);
+
+      if (enrollStream) {
+        enrollStream.getTracks().forEach(track => track.stop());
+        enrollStream = null;
+      }
+      video.srcObject = null;
+      video.classList.add('hidden');
+
+      preview.src = enrolledBase64Image;
+      preview.classList.remove('hidden');
+      btnSnap.classList.add('hidden');
+
+      btnSave.classList.remove('opacity-50', 'cursor-not-allowed');
+      btnSave.disabled = false;
+      statusText.innerText = 'Snapshot captured! Click Save Face to Profile.';
+      statusText.className = 'text-[11px] text-emerald-400 font-medium text-center min-h-[16px]';
+    }
+
+    function handleFaceFileUpload(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+
+      const video = document.getElementById('face-enroll-video');
+      const preview = document.getElementById('face-enroll-preview');
+      const placeholder = document.getElementById('face-enroll-placeholder');
+      const btnSnap = document.getElementById('btn-snap');
+      const btnSave = document.getElementById('btn-save-face');
+      const statusText = document.getElementById('face-enroll-status');
+
+      if (enrollStream) {
+        enrollStream.getTracks().forEach(track => track.stop());
+        enrollStream = null;
+        if (video) video.srcObject = null;
+      }
+      video.classList.add('hidden');
+      btnSnap.classList.add('hidden');
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        enrolledBase64Image = e.target.result;
+        placeholder.classList.add('hidden');
+        preview.src = enrolledBase64Image;
+        preview.classList.remove('hidden');
+        btnSave.classList.remove('opacity-50', 'cursor-not-allowed');
+        btnSave.disabled = false;
+        statusText.innerText = `Photo selected (${file.name}). Click Save Face to Profile.`;
+        statusText.className = 'text-[11px] text-emerald-400 font-medium text-center min-h-[16px]';
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function submitEnrolledFace() {
+      const driverId = document.getElementById('face-enroll-driver-id').value;
+      const btnSave = document.getElementById('btn-save-face');
+      const statusText = document.getElementById('face-enroll-status');
+
+      if (!driverId || !enrolledBase64Image) {
+        statusText.innerText = 'Please capture or upload an image first.';
+        statusText.className = 'text-[11px] text-amber-400 text-center min-h-[16px]';
+        return;
+      }
+
+      btnSave.disabled = true;
+      btnSave.classList.add('opacity-50', 'cursor-not-allowed');
+      statusText.innerText = 'Extracting facial features and computing 512-D embedding...';
+      statusText.className = 'text-[11px] text-cyan-400 animate-pulse text-center min-h-[16px]';
+
+      try {
+        const res = await fetch(`/api/drivers/${driverId}/enroll-face`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: enrolledBase64Image })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          statusText.innerText = 'Facial biometrics enrolled successfully!';
+          statusText.className = 'text-[11px] text-emerald-400 font-bold text-center min-h-[16px]';
+          setTimeout(async () => {
+            closeFaceEnrollModal();
+            await fetchData();
+          }, 900);
+        } else {
+          statusText.innerText = 'Enrollment failed: ' + (data.detail || data.message || 'Unknown error');
+          statusText.className = 'text-[11px] text-rose-400 text-center min-h-[16px]';
+          btnSave.disabled = false;
+          btnSave.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+      } catch (err) {
+        console.error('Enroll error:', err);
+        statusText.innerText = 'Network error while enrolling face biometrics.';
+        statusText.className = 'text-[11px] text-rose-400 text-center min-h-[16px]';
+        btnSave.disabled = false;
+        btnSave.classList.remove('opacity-50', 'cursor-not-allowed');
       }
     }
 

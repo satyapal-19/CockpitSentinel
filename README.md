@@ -1,5 +1,3 @@
-git 
-
 <h1 align="center">
   🚗 CockpitSentinel
 </h1>
@@ -11,6 +9,7 @@ git 
 <p align="center">
   <a href="#features">Features</a> •
   <a href="#architecture">Architecture</a> •
+  <a href="#in-cabin-face-recognition">Face ID</a> •
   <a href="#dashboard--telemetry">Dashboard</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#usage">Usage</a> •
@@ -25,12 +24,13 @@ git 
 
 | Module                       | What It Detects / Provides         | How                                                                                     |
 | ---------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------- |
+| **Face Recognition**   | In-cabin driver auto-identification| **FaceNet (InceptionResnetV1)** + MTCNN / Haar alignment → auto-loads driver profile   |
 | **Drowsiness**         | Eye closure, yawning, looking away | MediaPipe Face Landmarker → EAR, MAR, head yaw                                         |
-| **Distraction**        | Phone use, smoking                 | Fine-tuned**YOLO11s** unified detector + OpenVINO / TensorRT                      |
+| **Distraction**        | Phone use, smoking                 | Fine-tuned **YOLO11s** unified detector + OpenVINO / TensorRT                          |
 | **Risk Scoring**       | 4-level risk assessment            | Weighted signal fusion → SAFE / CAUTION / WARNING / CRITICAL                           |
 | **Stabilization**      | Temporal window (2–3s analysis)   | Multi-second window prevents blink/flicker alarms; clears instantly on attentive return |
-| **Web Dashboard**      | Fleet UI & calibration sliders     | FastAPI responsive cockpit dashboard with Chart.js analytics                            |
-| **Driver Profiles**    | Personalized detection thresholds  | Custom EAR, MAR, Yaw, Phone/Smoking conf stored in database                             |
+| **Web Dashboard**      | Fleet UI & calibration sliders     | FastAPI responsive cockpit dashboard with Chart.js analytics & face biometrics modal    |
+| **Driver Profiles**    | Personalized detection thresholds  | Custom EAR, MAR, Yaw, Phone/Smoking conf stored with 512-D face embeddings              |
 | **Route Management**   | Expressways & corridor tracking    | Distance, duration, risk profile, and assigned driver pilots                            |
 | **Trip Telemetry**     | Session logs & attention scoring   | Tracks duration, % attentive, frame telemetry, safety rating                            |
 | **Alert History**      | Incident audit log feed            | Timestamped alerts with signals, duration, and severity level                           |
@@ -205,6 +205,36 @@ uvicorn cockpit_sentinel.dashboard.app:app --host 0.0.0.0 --port 8000 --reload
 7. **Hybrid Cloud & Edge Database**:
    - Connects to **MongoDB Atlas** for centralized fleet telemetry.
    - Features automatic local **SQLite fallback** (`data/cockpit_sentinel.db`) ensuring vehicular operation runs without disruption even in zero-connectivity tunnels and remote highway zones.
+
+---
+
+### In-Cabin Face Recognition & Auto Profile Loading
+
+CockpitSentinel features automatic biometric face recognition for seamless in-cabin driver identification:
+
+- **Automatic Cabin Access**: When a driver sits in the vehicle cabin, the system automatically scans their face using **FaceNet (InceptionResnetV1)** with MTCNN and Haar cascade fallback.
+- **Dynamic Profile Adaptation**: Once matched ($\ge 55\%$ cosine similarity), the system instantly adapts detection sensitivity to that driver's calibrated EAR, MAR, head yaw, phone/smoking confidence thresholds, and temporal window.
+- **HUD Indicator**: The live monitor displays `DRIVER: <NAME> [ID VERIFIED]` in green on the heads-up display.
+- **Automatic Telemetry Binding**: Trips and safety incident logs are automatically recorded to the database under the verified driver's ID.
+
+#### Enrolling Driver Facial Biometrics
+
+You can enroll a driver's facial data in two ways:
+
+1. **Via Web Dashboard (Recommended)**:
+   - Go to the **Drivers** tab in the dashboard (`http://localhost:8000`).
+   - Click the **Face** button on any driver card.
+   - Click **Start Camera** and **Capture Snapshot**, or choose **Upload Photo**.
+   - Click **Save Face to Profile** to compute and persist the 512-dimensional embedding to the database.
+
+2. **Via Command-Line Interface (CLI)**:
+   ```powershell
+   # Enroll via photo file
+   python scripts/enroll_driver_face.py --driver-id "drv-satyapal-001" --image "path/to/driver_photo.jpg"
+
+   # Enroll via interactive webcam countdown capture
+   python scripts/enroll_driver_face.py --driver-id "drv-satyapal-001" --camera-index 0
+   ```
 
 ### What You'll See
 
