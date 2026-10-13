@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CockpitSentinel — Driver Telemetry & Safety Management</title>
+  <!-- Tailwind CSS & FontAwesome -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #0b0f19;
+      color: #f1f5f9;
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .glass-card {
+      background: rgba(19, 27, 46, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-card:hover {
+      border-color: rgba(6, 182, 212, 0.3);
+    }
+    .glow-cyan {
+      box-shadow: 0 0 15px rgba(6, 182, 212, 0.25);
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0b0f19; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Top Navbar -->
+  <header class="border-b border-slate-800 bg-slate-900/80 sticky top-0 z-40 backdrop-blur">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/30">
+          <i class="fa-solid fa-shield-halved text-white text-lg"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="font-bold text-lg tracking-wide text-white">CockpitSentinel</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-mono border border-cyan-500/30">v2.1</span>
+          </div>
+          <p class="text-xs text-slate-400">Driver Safety & Telemetry Control Center</p>
+        </div>
+      </div>
+
+      <!-- Center Backend Indicator -->
+      <div class="hidden md:flex items-center space-x-2 px-3 py-1.5 rounded-full bg-slate-800/80 border border-slate-700">
+        <span id="db-status-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="db-status-text" class="text-xs text-slate-300 font-medium">Connecting...</span>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="flex items-center space-x-3">
+        <button onclick="openModal('addDriverModal')" class="px-3.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center space-x-1.5 transition shadow-lg shadow-cyan-600/20">
+          <i class="fa-solid fa-user-plus"></i>
+          <span>New Driver</span>
+        </button>
+        <button onclick="openModal('addRouteModal')" class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center space-x-1.5 transition border border-slate-700">
+          <i class="fa-solid fa-route"></i>
+          <span>New Route</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="border-b border-slate-800 bg-slate-950/60 sticky top-16 z-30 backdrop-blur">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-1 sm:space-x-4 overflow-x-auto py-2">
+      <button onclick="switchTab('overview')" id="tab-btn-overview" class="tab-btn px-3.5 py-2 rounded-lg text-sm font-medium text-cyan-400 bg-cyan-950/40 border border-cyan-800/50 flex items-center space-x-2 whitespace-nowrap transition">
+        <i class="fa-solid fa-chart-pie"></i>
+        <span>Fleet Overview</span>
+      </button>
+      <button onclick="switchTab('drivers')" id="tab-btn-drivers" class="tab-btn px-3.5 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 flex items-center space-x-2 whitespace-nowrap transition">
+        <i class="fa-solid fa-users"></i>
+        <span>Driver Profiles & Thresholds</span>
+      </button>
+      <button onclick="switchTab('routes')" id="tab-btn-routes" class="tab-btn px-3.5 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 flex items-center space-x-2 whitespace-nowrap transition">
+        <i class="fa-solid fa-diamond-turn-right"></i>
+        <span>Route Management</span>
+      </button>
+      <button onclick="switchTab('trips')" id="tab-btn-trips" class="tab-btn px-3.5 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 flex items-center space-x-2 whitespace-nowrap transition">
+        <i class="fa-solid fa-car-side"></i>
+        <span>Trip Telemetry</span>
+      </button>
+      <button onclick="switchTab('alerts')" id="tab-btn-alerts" class="tab-btn px-3.5 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 flex items-center space-x-2 whitespace-nowrap transition">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span>Alert History</span>
+      </button>
+      <button onclick="switchTab('leaderboard')" id="tab-btn-leaderboard" class="tab-btn px-3.5 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 flex items-center space-x-2 whitespace-nowrap transition">
+        <i class="fa-solid fa-trophy"></i>
+        <span>Safety Leaderboard</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Main Content Area -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+    <!-- TAB 1: OVERVIEW -->
+    <section id="tab-overview" class="tab-content space-y-6">
+      <!-- KPI Stats Grid -->
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div class="glass-card rounded-xl p-4">
+          <div class="flex items-center justify-between text-slate-400 text-xs">
+            <span>Total Drivers</span>
+            <i class="fa-solid fa-user-group text-cyan-400"></i>
+          </div>
+          <div id="stat-drivers" class="mt-2 text-2xl font-bold text-white mono">--</div>
+          <div class="mt-1 text-[11px] text-emerald-400 flex items-center space-x-1">
+            <span id="stat-active-drivers">--</span> active now
+          </div>
+        </div>
+
+        <div class="glass-card rounded-xl p-4">
+          <div class="flex items-center justify-between text-slate-400 text-xs">
+            <span>Logged Trips</span>
+            <i class="fa-solid fa-route text-indigo-400"></i>
+          </div>
+          <div id="stat-trips" class="mt-2 text-2xl font-bold text-white mono">--</div>
+          <div class="mt-1 text-[11px] text-slate-400">All sessions logged</div>
+        </div>
+
+        <div class="glass-card rounded-xl p-4">
+          <div class="flex items-center justify-between text-slate-400 text-xs">
+            <span>Fleet Distance</span>
+            <i class="fa-solid fa-road text-amber-400"></i>
+          </div>
+          <div id="stat-distance" class="mt-2 text-2xl font-bold text-white mono">-- km</div>
+          <div class="mt-1 text-[11px] text-slate-400">Across all routes</div>
+        </div>
+
+        <div class="glass-card rounded-xl p-4">
+          <div class="flex items-center justify-between text-slate-400 text-xs">
+            <span>Avg Attention</span>
+            <i class="fa-solid fa-bullseye text-emerald-400"></i>
+          </div>
+          <div id="stat-attention" class="mt-2 text-2xl font-bold text-emerald-400 mono">--%</div>
+          <div class="mt-1 text-[11px] text-emerald-400/80">Target: >90%</div>
+        </div>
+
+        <div class="glass-card rounded-xl p-4">
+          <div class="flex items-center justify-between text-slate-400 text-xs">
+            <span>Alert Events</span>
+            <i class="fa-solid fa-bell text-rose-400"></i>
+          </div>
+          <div id="stat-alerts" class="mt-2 text-2xl font-bold text-rose-400 mono">--</div>
+          <div class="mt-1 text-[11px] text-slate-400">Interventions logged</div>
+        </div>
+
+        <div class="glass-card rounded-xl p-4">
+          <div class="flex items-center justify-between text-slate-400 text-xs">
+            <span>Fleet Safety Rating</span>
+            <i class="fa-solid fa-star text-yellow-400"></i>
+          </div>
+          <div id="stat-rating" class="mt-2 text-2xl font-bold text-yellow-400 mono">-- / 5.0</div>
+          <div class="mt-1 text-[11px] text-yellow-400/80">5-star index</div>
+        </div>
+      </div>
+
+      <!-- Charts & Live Feed Section -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Main Attention Chart -->
+        <div class="lg:col-span-2 glass-card rounded-xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="text-sm font-semibold text-white">Trip Attention Trend</h3>
+              <p class="text-xs text-slate-400">Attentiveness score per logged trip session</p>
+            </div>
+            <span class="text-xs px-2 py-1 rounded bg-slate-800 text-cyan-400 font-mono">Live Telemetry</span>
+          </div>
+          <div class="h-64">
+            <canvas id="overviewAttentionChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Recent Incidents Ticker -->
+        <div class="glass-card rounded-xl p-5 flex flex-col">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-semibold text-white flex items-center space-x-2">
+              <i class="fa-solid fa-shield-cat text-rose-400"></i>
+              <span>Recent Alert Feed</span>
+            </h3>
+            <button onclick="switchTab('alerts')" class="text-xs text-cyan-400 hover:underline">View all</button>
+          </div>
+          <div id="overview-alerts-feed" class="flex-1 space-y-3 overflow-y-auto max-h-72 pr-1">
+            <!-- Dynamic feed -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Driver Spotlight -->
+      <div class="glass-card rounded-xl p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-sm font-semibold text-white">Active Driver Status</h3>
+          <button onclick="switchTab('drivers')" class="text-xs text-cyan-400 hover:underline">Manage All Drivers &rarr;</button>
+        </div>
+        <div id="overview-driver-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: DRIVER PROFILES & THRESHOLD CALIBRATION -->
+    <section id="tab-drivers" class="tab-content hidden space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 class="text-lg font-bold text-white">Driver Profiles & Threshold Calibration</h2>
+          <p class="text-xs text-slate-400">Set personalized biometric fatigue & distraction detection thresholds stored in MongoDB Atlas.</p>
+        </div>
+        <button onclick="openModal('addDriverModal')" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center space-x-2 self-start sm:self-auto transition">
+          <i class="fa-solid fa-user-plus"></i>
+          <span>Create New Driver</span>
+        </button>
+      </div>
+
+      <!-- Driver Cards List -->
+      <div id="drivers-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Rendered via JS -->
+      </div>
+    </section>
+
+    <!-- TAB 3: ROUTE MANAGEMENT -->
+    <section id="tab-routes" class="tab-content hidden space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 class="text-lg font-bold text-white">Commercial Route Management</h2>
+          <p class="text-xs text-slate-400">Manage highway corridors, expressway routes, speed limits, and driver assignments.</p>
+        </div>
+        <button onclick="openModal('addRouteModal')" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center space-x-2 self-start sm:self-auto transition">
+          <i class="fa-solid fa-plus"></i>
+          <span>Add Route</span>
+        </button>
+      </div>
+
+      <!-- Route Cards -->
+      <div id="routes-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Rendered via JS -->
+      </div>
+    </section>
+
+    <!-- TAB 4: TRIP TELEMETRY -->
+    <section id="tab-trips" class="tab-content hidden space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 class="text-lg font-bold text-white">Trip Session Telemetry</h2>
+          <p class="text-xs text-slate-400">Logged trips with attentive vs. inattentive time, safety score, and alert stats.</p>
+        </div>
+        <div class="flex items-center space-x-3">
+          <select id="trip-driver-filter" onchange="renderTripsTable()" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2">
+            <option value="">All Drivers</option>
+          </select>
+          <button onclick="fetchData()" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs transition border border-slate-700">
+            <i class="fa-solid fa-arrows-rotate mr-1"></i> Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- Trips Table -->
+      <div class="glass-card rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-900/90 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
+              <tr>
+                <th class="py-3.5 px-4">Trip ID / Date</th>
+                <th class="py-3.5 px-4">Driver</th>
+                <th class="py-3.5 px-4">Route</th>
+                <th class="py-3.5 px-4">Duration</th>
+                <th class="py-3.5 px-4">Attention Score</th>
+                <th class="py-3.5 px-4">Alerts</th>
+                <th class="py-3.5 px-4">Safety Rating</th>
+                <th class="py-3.5 px-4">Status</th>
+              </tr>
+            </thead>
+            <tbody id="trips-table-body" class="divide-y divide-slate-800/60 text-slate-300">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: ALERT HISTORY -->
+    <section id="tab-alerts" class="tab-content hidden space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 class="text-lg font-bold text-white">Alert Incident Audit Feed</h2>
+          <p class="text-xs text-slate-400">Comprehensive incident log for all fatigue, yawn, phone glance, and smoking detections.</p>
+        </div>
+        <div class="flex items-center space-x-3">
+          <select id="alert-level-filter" onchange="renderAlertsTable()" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2">
+            <option value="">All Risk Levels</option>
+            <option value="caution">Caution Only</option>
+            <option value="warning">Warning Only</option>
+            <option value="critical">Critical Only</option>
+          </select>
+          <select id="alert-driver-filter" onchange="renderAlertsTable()" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2">
+            <option value="">All Drivers</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Alerts Table -->
+      <div class="glass-card rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-900/90 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
+              <tr>
+                <th class="py-3.5 px-4">Timestamp</th>
+                <th class="py-3.5 px-4">Driver</th>
+                <th class="py-3.5 px-4">Risk Level</th>
+                <th class="py-3.5 px-4">Score</th>
+                <th class="py-3.5 px-4">Detected Signals</th>
+                <th class="py-3.5 px-4">Duration</th>
+                <th class="py-3.5 px-4">Corridor / Route</th>
+                <th class="py-3.5 px-4">Audit Notes</th>
+              </tr>
+            </thead>
+            <tbody id="alerts-table-body" class="divide-y divide-slate-800/60 text-slate-300">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 6: LEADERBOARD -->
+    <section id="tab-leaderboard" class="tab-content hidden space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 class="text-lg font-bold text-white">Driver Safety Leaderboard & Ratings</h2>
+          <p class="text-xs text-slate-400">Ranked by overall attentiveness score, safety rating, and alert mitigation.</p>
+        </div>
+        <div class="flex items-center space-x-2 text-xs text-slate-400">
+          <span class="w-3 h-3 rounded-full bg-yellow-400 inline-block"></span> Gold: >95%
+          <span class="w-3 h-3 rounded-full bg-slate-300 inline-block ml-2"></span> Silver: >90%
+          <span class="w-3 h-3 rounded-full bg-amber-600 inline-block ml-2"></span> Bronze: >85%
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 gap-4" id="leaderboard-container">
+        <!-- Rendered via JS -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: CALIBRATE DRIVER THRESHOLDS -->
+  <!-- ========================================================================= -->
+  <div id="calibrateModal" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card bg-slate-900 border border-slate-700 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-5">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div>
+          <h3 class="text-base font-bold text-white flex items-center space-x-2">
+            <i class="fa-solid fa-sliders text-cyan-400"></i>
+            <span>Calibrate Thresholds</span>
+          </h3>
+          <p id="cal-driver-title" class="text-xs text-cyan-400 font-mono mt-0.5">Driver: --</p>
+        </div>
+        <button onclick="closeModal('calibrateModal')" class="text-slate-400 hover:text-white text-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <input type="hidden" id="cal-driver-id">
+
+      <div class="space-y-4 text-xs">
+        <!-- EAR Threshold Slider -->
+        <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/60">
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-medium text-slate-200">Eye Aspect Ratio (EAR) Threshold</span>
+            <span id="cal-ear-val" class="text-cyan-400 font-mono font-bold">0.22</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mb-2">Eyes considered closed below this ratio. Lower for naturally narrow eyes.</p>
+          <input type="range" id="cal-ear" min="0.12" max="0.35" step="0.01" class="w-full accent-cyan-400" oninput="updateSliderVal('cal-ear', 'cal-ear-val')">
+        </div>
+
+        <!-- MAR Threshold Slider -->
+        <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/60">
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-medium text-slate-200">Mouth Aspect Ratio (MAR) Threshold</span>
+            <span id="cal-mar-val" class="text-cyan-400 font-mono font-bold">0.60</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mb-2">Yawn alert triggered when mouth opens past this ratio.</p>
+          <input type="range" id="cal-mar" min="0.35" max="0.85" step="0.01" class="w-full accent-cyan-400" oninput="updateSliderVal('cal-mar', 'cal-mar-val')">
+        </div>
+
+        <!-- Head Yaw Threshold Slider -->
+        <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/60">
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-medium text-slate-200">Head Turn Yaw Limit (Degrees)</span>
+            <span id="cal-yaw-val" class="text-cyan-400 font-mono font-bold">30.0°</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mb-2">Driver flagged for looking away beyond this turning angle.</p>
+          <input type="range" id="cal-yaw" min="15.0" max="50.0" step="1.0" class="w-full accent-cyan-400" oninput="updateSliderVal('cal-yaw', 'cal-yaw-val', '°')">
+        </div>
+
+        <!-- Phone & Smoking Confidence Grid -->
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-700/60">
+            <div class="flex justify-between items-center mb-1">
+              <span class="font-medium text-slate-200">Phone Conf</span>
+              <span id="cal-phone-val" class="text-cyan-400 font-mono font-bold">0.30</span>
+            </div>
+            <input type="range" id="cal-phone" min="0.10" max="0.90" step="0.05" class="w-full accent-cyan-400" oninput="updateSliderVal('cal-phone', 'cal-phone-val')">
+          </div>
+          <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-700/60">
+            <div class="flex justify-between items-center mb-1">
+              <span class="font-medium text-slate-200">Smoking Conf</span>
+              <span id="cal-smoking-val" class="text-cyan-400 font-mono font-bold">0.30</span>
+            </div>
+            <input type="range" id="cal-smoking" min="0.10" max="0.90" step="0.05" class="w-full accent-cyan-400" oninput="updateSliderVal('cal-smoking', 'cal-smoking-val')">
+          </div>
+        </div>
+
+        <!-- Temporal Window -->
+        <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/60">
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-medium text-slate-200">Alert Temporal Smoothing Window</span>
+            <span id="cal-time-val" class="text-cyan-400 font-mono font-bold">2.0s</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mb-2">Consecutive seconds anomaly must persist before triggering high alert.</p>
+          <input type="range" id="cal-time" min="0.5" max="5.0" step="0.1" class="w-full accent-cyan-400" oninput="updateSliderVal('cal-time', 'cal-time-val', 's')">
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">
+        <button onclick="closeModal('calibrateModal')" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold">
+          Cancel
+        </button>
+        <button onclick="saveCalibratedThresholds()" class="px-5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center space-x-2 shadow-lg shadow-cyan-600/30">
+          <i class="fa-solid fa-cloud-arrow-up"></i>
+          <span>Save to Database</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: ADD DRIVER -->
+  <!-- ========================================================================= -->
+  <div id="addDriverModal" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold text-white flex items-center space-x-2">
+          <i class="fa-solid fa-user-plus text-cyan-400"></i>
+          <span>Add New Driver Profile</span>
+        </h3>
+        <button onclick="closeModal('addDriverModal')" class="text-slate-400 hover:text-white text-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <form id="add-driver-form" onsubmit="submitNewDriver(event)" class="space-y-3.5 text-xs">
+        <div>
+          <label class="block text-slate-300 mb-1 font-medium">Full Name</label>
+          <input type="text" id="new-driver-name" required placeholder="e.g. Satyapal Gaikwad" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Driving License Number</label>
+            <input type="text" id="new-driver-license" required placeholder="DL-MH-13-2021-00892" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono">
+          </div>
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Experience (Years)</label>
+            <input type="number" id="new-driver-exp" min="0" max="50" value="3" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Contact Phone</label>
+            <input type="text" id="new-driver-phone" placeholder="+91 98230 00000" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+          </div>
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Operational Status</label>
+            <select id="new-driver-status" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+              <option value="active">Active</option>
+              <option value="resting">Resting</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-slate-300 mb-1 font-medium">Specialization / Notes</label>
+          <textarea id="new-driver-notes" rows="2" placeholder="e.g. Certified for night cargo, expressway transit..." class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white"></textarea>
+        </div>
+
+        <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">
+          <button type="button" onclick="closeModal('addDriverModal')" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold">
+            Cancel
+          </button>
+          <button type="submit" class="px-5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center space-x-2">
+            <i class="fa-solid fa-check"></i>
+            <span>Create Profile</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: ADD ROUTE -->
+  <!-- ========================================================================= -->
+  <div id="addRouteModal" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold text-white flex items-center space-x-2">
+          <i class="fa-solid fa-route text-indigo-400"></i>
+          <span>Add New Corridor Route</span>
+        </h3>
+        <button onclick="closeModal('addRouteModal')" class="text-slate-400 hover:text-white text-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <form id="add-route-form" onsubmit="submitNewRoute(event)" class="space-y-3.5 text-xs">
+        <div>
+          <label class="block text-slate-300 mb-1 font-medium">Route Corridor Name</label>
+          <input type="text" id="new-route-name" required placeholder="e.g. Pune - Goa Coastal Highway" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Origin</label>
+            <input type="text" id="new-route-origin" required placeholder="e.g. Pune" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+          </div>
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Destination</label>
+            <input type="text" id="new-route-dest" required placeholder="e.g. Panaji" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Distance (km)</label>
+            <input type="number" id="new-route-distance" step="0.5" required placeholder="450" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+          </div>
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Est. Time (mins)</label>
+            <input type="number" id="new-route-duration" required placeholder="480" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+          </div>
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Speed Limit</label>
+            <input type="number" id="new-route-speed" value="80" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Risk Level</label>
+            <select id="new-route-risk" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+              <option value="low">Low Risk</option>
+              <option value="moderate" selected>Moderate Risk</option>
+              <option value="high">High Risk (Ghat/Night)</option>
+              <option value="expressway">Expressway</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Assign Driver</label>
+            <select id="new-route-driver" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+              <option value="">Unassigned</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-slate-300 mb-1 font-medium">Checkpoints (comma-separated)</label>
+          <input type="text" id="new-route-checkpoints" placeholder="e.g. Shirwal, Satara, Kolhapur" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+        </div>
+
+        <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">
+          <button type="button" onclick="closeModal('addRouteModal')" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold">
+            Cancel
+          </button>
+          <button type="submit" class="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center space-x-2">
+            <i class="fa-solid fa-check"></i>
+            <span>Add Route</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- JavaScript Frontend Logic -->
+  <script>
+    let globalData = {
+      summary: null,
+      drivers: [],
+      routes: [],
+      trips: [],
+      alerts: [],
+      leaderboard: []
+    };
+
+    let attentionChartInstance = null;
+
+    function updateSliderVal(sliderId, labelId, suffix = '') {
+      const val = document.getElementById(sliderId).value;
+      document.getElementById(labelId).innerText = val + suffix;
+    }
+
+    function openModal(id) {
+      document.getElementById(id).classList.remove('hidden');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.add('hidden');
+    }
+
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('text-cyan-400', 'bg-cyan-950/40', 'border-cyan-800/50');
+        btn.classList.add('text-slate-400');
+      });
+
+      const activeSection = document.getElementById(`tab-${tabName}`);
+      const activeBtn = document.getElementById(`tab-btn-${tabName}`);
+      if (activeSection) activeSection.classList.remove('hidden');
+      if (activeBtn) {
+        activeBtn.classList.add('text-cyan-400', 'bg-cyan-950/40', 'border', 'border-cyan-800/50');
+        activeBtn.classList.remove('text-slate-400');
+      }
+
+      if (tabName === 'overview' && attentionChartInstance) {
+        attentionChartInstance.resize();
+      }
+    }
+
+    async function fetchData() {
+      try {
+        const [sumRes, drvRes, rtsRes, trpRes, altRes, lbRes] = await Promise.all([
+          fetch('/api/fleet/summary').then(r => r.json()),
+          fetch('/api/drivers').then(r => r.json()),
+          fetch('/api/routes').then(r => r.json()),
+          fetch('/api/trips').then(r => r.json()),
+          fetch('/api/alerts').then(r => r.json()),
+          fetch('/api/leaderboard').then(r => r.json())
+        ]);
+
+        globalData.summary = sumRes;
+        globalData.drivers = drvRes;
+        globalData.routes = rtsRes;
+        globalData.trips = trpRes;
+        globalData.alerts = altRes;
+        globalData.leaderboard = lbRes;
+
+        renderBackendStatus();
+        renderSummaryKPIs();
+        renderOverviewAttentionChart();
+        renderOverviewAlertsFeed();
+        renderOverviewDriversGrid();
+        renderDriversList();
+        renderRoutesList();
+        populateDriverSelectFilters();
+        renderTripsTable();
+        renderAlertsTable();
+        renderLeaderboard();
+      } catch (err) {
+        console.error('Failed fetching data:', err);
+      }
+    }
+
+    function renderBackendStatus() {
+      const dot = document.getElementById('db-status-dot');
+      const text = document.getElementById('db-status-text');
+      if (globalData.summary && globalData.summary.backend_info) {
+        const info = globalData.summary.backend_info;
+        if (info.backend === 'mongodb') {
+          dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-md shadow-emerald-500/50';
+          text.innerText = 'MongoDB Atlas: Connected';
+        } else {
+          dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
+          text.innerText = 'SQLite: Offline Mode';
+        }
+      }
+    }
+
+    function renderSummaryKPIs() {
+      const s = globalData.summary;
+      if (!s) return;
+      document.getElementById('stat-drivers').innerText = s.total_drivers;
+      document.getElementById('stat-active-drivers').innerText = s.active_drivers;
+      document.getElementById('stat-trips').innerText = s.total_trips;
+      document.getElementById('stat-distance').innerText = `${s.total_distance_km} km`;
+      document.getElementById('stat-attention').innerText = `${s.average_attention_score}%`;
+      document.getElementById('stat-alerts').innerText = s.total_alerts;
+      document.getElementById('stat-rating').innerText = `${s.average_fleet_rating} / 5.0`;
+    }
+
+    function renderOverviewAttentionChart() {
+      const ctx = document.getElementById('overviewAttentionChart').getContext('2d');
+      const reversedTrips = [...globalData.trips].reverse().slice(-10);
+
+      const labels = reversedTrips.map(t => {
+        const d = new Date(t.start_time);
+        return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${t.driver_name.split(' ')[0]}`;
+      });
+      const data = reversedTrips.map(t => t.attention_score);
+
+      if (attentionChartInstance) attentionChartInstance.destroy();
+
+      attentionChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels.length ? labels : ['Trip 1', 'Trip 2', 'Trip 3'],
+          datasets: [{
+            label: 'Attentive Score (%)',
+            data: data.length ? data : [98, 94, 91],
+            borderColor: '#06b6d4',
+            backgroundColor: 'rgba(6, 182, 212, 0.12)',
+            fill: true,
+            tension: 0.35,
+            borderWidth: 2,
+            pointBackgroundColor: '#06b6d4',
+            pointRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            y: {
+              min: 75,
+              max: 100,
+              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+              ticks: { color: '#94a3b8', font: { size: 10 } }
+            },
+            x: {
+              grid: { display: false },
+              ticks: { color: '#94a3b8', font: { size: 10 } }
+            }
+          }
+        }
+      });
+    }
+
+    function renderOverviewAlertsFeed() {
+      const feed = document.getElementById('overview-alerts-feed');
+      const alerts = globalData.alerts.slice(0, 5);
+      if (!alerts.length) {
+        feed.innerHTML = '<p class="text-xs text-slate-500">No alerts recorded yet.</p>';
+        return;
+      }
+
+      feed.innerHTML = alerts.map(a => {
+        const isCritical = a.risk_level === 'critical';
+        const isWarning = a.risk_level === 'warning';
+        const badgeColor = isCritical ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' : isWarning ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+        const icon = isCritical ? 'fa-triangle-exclamation' : isWarning ? 'fa-bell' : 'fa-info-circle';
+        const signals = a.active_signals.map(s => s.replace('_', ' ')).join(', ');
+
+        return `
+          <div class="p-3 rounded-lg bg-slate-800/40 border border-slate-700/50 flex items-start space-x-3">
+            <div class="mt-0.5 text-xs px-2 py-0.5 rounded border ${badgeColor} font-mono">
+              <i class="fa-solid ${icon} mr-1"></i>${a.risk_level.toUpperCase()}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex justify-between items-baseline">
+                <span class="text-xs font-semibold text-slate-200 truncate">${a.driver_name}</span>
+                <span class="text-[10px] text-slate-500 mono">${new Date(a.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+              <p class="text-[11px] text-slate-400 mt-0.5">${signals || 'Distraction'}</p>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderOverviewDriversGrid() {
+      const grid = document.getElementById('overview-driver-grid');
+      const drivers = globalData.drivers.slice(0, 4);
+      grid.innerHTML = drivers.map(d => `
+        <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50 flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-bold text-white text-sm">
+            ${d.name.split(' ').map(n=>n[0]).join('')}
+          </div>
+          <div class="flex-1 min-w-0">
+            <h4 class="text-xs font-semibold text-white truncate">${d.name}</h4>
+            <div class="flex items-center space-x-2 text-[11px] text-slate-400 mt-0.5">
+              <span class="text-yellow-400"><i class="fa-solid fa-star text-[10px]"></i> ${d.rating}</span>
+              <span>•</span>
+              <span class="text-emerald-400 font-mono">${d.safety_score}% safe</span>
+            </div>
+          </div>
+          <span class="w-2.5 h-2.5 rounded-full ${d.status === 'active' ? 'bg-emerald-400' : 'bg-amber-400'}"></span>
+        </div>
+      `).join('');
+    }
+
+    function renderDriversList() {
+      const list = document.getElementById('drivers-list');
+      list.innerHTML = globalData.drivers.map(d => {
+        const t = d.thresholds;
+        return `
+          <div class="glass-card rounded-2xl p-5 flex flex-col justify-between space-y-4">
+            <div>
+              <div class="flex items-start justify-between">
+                <div class="flex items-center space-x-3">
+                  <div class="w-12 h-12 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-700 flex items-center justify-center text-white font-bold text-base shadow-md shadow-cyan-600/30">
+                    ${d.name.split(' ').map(n=>n[0]).join('')}
+                  </div>
+                  <div>
+                    <h3 class="text-sm font-bold text-white">${d.name}</h3>
+                    <p class="text-[11px] text-slate-400 font-mono">${d.license_number}</p>
+                  </div>
+                </div>
+                <span class="px-2 py-0.5 rounded text-[10px] font-semibold uppercase font-mono ${d.status === 'active' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-700 text-slate-300'}">
+                  ${d.status}
+                </span>
+              </div>
+
+              <!-- Metrics -->
+              <div class="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-slate-800 text-center">
+                <div class="bg-slate-800/40 p-2 rounded-lg">
+                  <span class="block text-[10px] text-slate-400">Rating</span>
+                  <span class="text-xs font-bold text-yellow-400"><i class="fa-solid fa-star text-[9px]"></i> ${d.rating}</span>
+                </div>
+                <div class="bg-slate-800/40 p-2 rounded-lg">
+                  <span class="block text-[10px] text-slate-400">Safety Index</span>
+                  <span class="text-xs font-bold text-emerald-400 mono">${d.safety_score}%</span>
+                </div>
+                <div class="bg-slate-800/40 p-2 rounded-lg">
+                  <span class="block text-[10px] text-slate-400">Trips</span>
+                  <span class="text-xs font-bold text-white mono">${d.total_trips}</span>
+                </div>
+              </div>
+
+              <!-- Active Thresholds Summary -->
+              <div class="mt-4 p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5 text-[11px]">
+                <div class="flex justify-between text-slate-300">
+                  <span class="text-slate-400">EAR Limit (Eyes Closed):</span>
+                  <span class="font-mono text-cyan-400 font-semibold">${t.eye_aspect_ratio_threshold}</span>
+                </div>
+                <div class="flex justify-between text-slate-300">
+                  <span class="text-slate-400">MAR Limit (Yawning):</span>
+                  <span class="font-mono text-cyan-400 font-semibold">${t.mouth_aspect_ratio_threshold}</span>
+                </div>
+                <div class="flex justify-between text-slate-300">
+                  <span class="text-slate-400">Yaw Turn Angle:</span>
+                  <span class="font-mono text-cyan-400 font-semibold">${t.head_yaw_threshold_degrees}°</span>
+                </div>
+                <div class="flex justify-between text-slate-300">
+                  <span class="text-slate-400">Phone Conf / Smoking Conf:</span>
+                  <span class="font-mono text-slate-200">${t.phone_confidence_threshold} / ${t.smoking_confidence_threshold}</span>
+                </div>
+                <div class="flex justify-between text-slate-300">
+                  <span class="text-slate-400">Temporal Alert Window:</span>
+                  <span class="font-mono text-emerald-400 font-semibold">${t.time_window_seconds}s</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex items-center space-x-2 pt-2">
+              <button onclick="openCalibrateModal('${d.id}')" class="flex-1 py-2 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center justify-center space-x-1.5 transition">
+                <i class="fa-solid fa-sliders"></i>
+                <span>Calibrate Thresholds</span>
+              </button>
+              <button onclick="deleteDriver('${d.id}')" class="p-2 rounded-lg bg-slate-800 hover:bg-rose-900/60 hover:text-rose-400 text-slate-400 text-xs transition border border-slate-700">
+                <i class="fa-solid fa-trash-can"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderRoutesList() {
+      const list = document.getElementById('routes-list');
+      list.innerHTML = globalData.routes.map(r => {
+        const riskBadge = r.risk_level === 'expressway' ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' : r.risk_level === 'high' ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' : 'bg-slate-700 text-slate-300';
+        return `
+          <div class="glass-card rounded-2xl p-5 flex flex-col justify-between space-y-4">
+            <div>
+              <div class="flex items-start justify-between">
+                <div>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-semibold uppercase font-mono border ${riskBadge}">
+                    ${r.risk_level}
+                  </span>
+                  <h3 class="text-sm font-bold text-white mt-2">${r.route_name}</h3>
+                </div>
+                <span class="text-xs text-slate-400 font-mono"><i class="fa-solid fa-gauge-high mr-1 text-slate-500"></i>${r.speed_limit_kmh} km/h</span>
+              </div>
+
+              <!-- Origin -> Destination -->
+              <div class="mt-4 p-3 rounded-xl bg-slate-800/40 border border-slate-700/60 flex items-center justify-between text-xs">
+                <div>
+                  <span class="block text-[10px] text-slate-400">Origin</span>
+                  <span class="font-semibold text-slate-200">${r.origin}</span>
+                </div>
+                <i class="fa-solid fa-arrow-right text-cyan-400"></i>
+                <div class="text-right">
+                  <span class="block text-[10px] text-slate-400">Destination</span>
+                  <span class="font-semibold text-slate-200">${r.destination}</span>
+                </div>
+              </div>
+
+              <!-- Distance & Time -->
+              <div class="grid grid-cols-2 gap-2 mt-3 text-xs">
+                <div class="bg-slate-800/30 p-2.5 rounded-lg border border-slate-800 text-center">
+                  <span class="block text-[10px] text-slate-400">Distance</span>
+                  <span class="font-bold text-white mono">${r.distance_km} km</span>
+                </div>
+                <div class="bg-slate-800/30 p-2.5 rounded-lg border border-slate-800 text-center">
+                  <span class="block text-[10px] text-slate-400">Est. Duration</span>
+                  <span class="font-bold text-white mono">${Math.floor(r.estimated_duration_minutes/60)}h ${r.estimated_duration_minutes%60}m</span>
+                </div>
+              </div>
+
+              <!-- Assigned Pilot -->
+              <div class="mt-3 text-xs text-slate-400 flex items-center space-x-1.5">
+                <i class="fa-solid fa-user-tag text-slate-500"></i>
+                <span>Pilot: <strong class="text-cyan-400">${r.assigned_driver_name || 'Unassigned'}</strong></span>
+              </div>
+            </div>
+
+            <div class="flex justify-end pt-2">
+              <button onclick="deleteRoute('${r.id}')" class="text-xs text-slate-400 hover:text-rose-400 transition">
+                <i class="fa-solid fa-trash-can mr-1"></i> Remove
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function populateDriverSelectFilters() {
+      const tripFilter = document.getElementById('trip-driver-filter');
+      const alertFilter = document.getElementById('alert-driver-filter');
+      const routeDriverSelect = document.getElementById('new-route-driver');
+
+      const options = globalData.drivers.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+      tripFilter.innerHTML = '<option value="">All Drivers</option>' + options;
+      alertFilter.innerHTML = '<option value="">All Drivers</option>' + options;
+      routeDriverSelect.innerHTML = '<option value="">Unassigned</option>' + options;
+    }
+
+    function renderTripsTable() {
+      const tbody = document.getElementById('trips-table-body');
+      const selectedDriver = document.getElementById('trip-driver-filter').value;
+      const trips = selectedDriver ? globalData.trips.filter(t => t.driver_id === selectedDriver) : globalData.trips;
+
+      if (!trips.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-6 text-slate-500">No trip logs available.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = trips.map(t => {
+        const hours = Math.floor(t.duration_seconds / 3600);
+        const mins = Math.floor((t.duration_seconds % 3600) / 60);
+        const durationStr = `${hours}h ${mins}m`;
+        const attPct = Math.round(t.attention_score);
+
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="py-3 px-4 font-mono text-[11px] text-slate-400">
+              ${t.id.slice(-8)}<br><span class="text-[10px] text-slate-500">${new Date(t.start_time).toLocaleDateString()}</span>
+            </td>
+            <td class="py-3 px-4 font-semibold text-slate-200">${t.driver_name}</td>
+            <td class="py-3 px-4 text-slate-300">${t.route_name || 'Highway Corridor'}</td>
+            <td class="py-3 px-4 mono text-slate-300">${durationStr}</td>
+            <td class="py-3 px-4">
+              <div class="flex items-center space-x-2">
+                <span class="mono font-semibold ${attPct >= 95 ? 'text-emerald-400' : 'text-amber-400'}">${attPct}%</span>
+                <div class="w-16 bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div class="${attPct >= 95 ? 'bg-emerald-400' : 'bg-amber-400'} h-1.5 rounded-full" style="width: ${attPct}%"></div>
+                </div>
+              </div>
+            </td>
+            <td class="py-3 px-4 mono text-rose-400">${t.alert_count}</td>
+            <td class="py-3 px-4 text-yellow-400"><i class="fa-solid fa-star text-[10px]"></i> ${t.safety_rating}</td>
+            <td class="py-3 px-4">
+              <span class="px-2 py-0.5 rounded text-[10px] uppercase font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                ${t.status}
+              </span>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderAlertsTable() {
+      const tbody = document.getElementById('alerts-table-body');
+      const levelFilter = document.getElementById('alert-level-filter').value;
+      const driverFilter = document.getElementById('alert-driver-filter').value;
+
+      let alerts = globalData.alerts;
+      if (levelFilter) alerts = alerts.filter(a => a.risk_level === levelFilter);
+      if (driverFilter) alerts = alerts.filter(a => a.driver_id === driverFilter);
+
+      if (!alerts.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-6 text-slate-500">No alert incidents found.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = alerts.map(a => {
+        const isCritical = a.risk_level === 'critical';
+        const isWarning = a.risk_level === 'warning';
+        const badgeColor = isCritical ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' : isWarning ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+        const signalPills = a.active_signals.map(s => `
+          <span class="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-slate-300 font-mono border border-slate-700 mr-1">
+            ${s.replace('_', ' ')}
+          </span>
+        `).join('');
+
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="py-3 px-4 font-mono text-[11px] text-slate-400">
+              ${new Date(a.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </td>
+            <td class="py-3 px-4 font-semibold text-slate-200">${a.driver_name}</td>
+            <td class="py-3 px-4">
+              <span class="px-2 py-0.5 rounded text-[10px] uppercase font-mono border ${badgeColor}">
+                ${a.risk_level}
+              </span>
+            </td>
+            <td class="py-3 px-4 font-bold mono text-rose-400">${a.risk_score}</td>
+            <td class="py-3 px-4">${signalPills}</td>
+            <td class="py-3 px-4 mono text-slate-400">${a.duration_seconds}s</td>
+            <td class="py-3 px-4 text-slate-300">${a.route_name || '--'}</td>
+            <td class="py-3 px-4 text-slate-400 text-[11px]">${a.notes || '--'}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderLeaderboard() {
+      const container = document.getElementById('leaderboard-container');
+      container.innerHTML = globalData.leaderboard.map(lb => {
+        const isGold = lb.rank === 1;
+        const isSilver = lb.rank === 2;
+        const isBronze = lb.rank === 3;
+        const medalColor = isGold ? 'text-yellow-400' : isSilver ? 'text-slate-300' : isBronze ? 'text-amber-600' : 'text-slate-600';
+        const rankBorder = isGold ? 'border-yellow-500/40 bg-gradient-to-r from-yellow-500/10 to-transparent' : isSilver ? 'border-slate-400/40 bg-gradient-to-r from-slate-400/10 to-transparent' : isBronze ? 'border-amber-600/40 bg-gradient-to-r from-amber-600/10 to-transparent' : 'border-slate-800';
+
+        return `
+          <div class="glass-card rounded-2xl p-5 border ${rankBorder} flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="flex items-center space-x-4">
+              <div class="text-2xl font-black ${medalColor} mono w-8 text-center">
+                #${lb.rank}
+              </div>
+              <div class="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center font-bold text-white text-base">
+                ${lb.name.split(' ').map(n=>n[0]).join('')}
+              </div>
+              <div>
+                <div class="flex items-center space-x-2">
+                  <h3 class="text-base font-bold text-white">${lb.name}</h3>
+                  <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">${lb.license_number}</span>
+                </div>
+                <div class="flex items-center space-x-3 text-xs text-slate-400 mt-1">
+                  <span>${lb.total_trips} trips completed</span>
+                  <span>•</span>
+                  <span>${lb.total_distance_km} km driven</span>
+                  <span>•</span>
+                  <span class="text-rose-400">${lb.total_alerts} alerts</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center space-x-6 sm:self-center">
+              <div class="text-right">
+                <span class="block text-[10px] text-slate-400">Driver Rating</span>
+                <span class="text-base font-bold text-yellow-400"><i class="fa-solid fa-star text-xs"></i> ${lb.rating} / 5.0</span>
+              </div>
+              <div class="text-right min-w-[100px]">
+                <span class="block text-[10px] text-slate-400">Safety Index</span>
+                <span class="text-xl font-black text-emerald-400 mono">${lb.safety_score}%</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Threshold calibration modal logic
+    function openCalibrateModal(driverId) {
+      const driver = globalData.drivers.find(d => d.id === driverId);
+      if (!driver) return;
+      const t = driver.thresholds;
+
+      document.getElementById('cal-driver-id').value = driver.id;
+      document.getElementById('cal-driver-title').innerText = `Driver: ${driver.name} (${driver.license_number})`;
+
+      document.getElementById('cal-ear').value = t.eye_aspect_ratio_threshold;
+      document.getElementById('cal-ear-val').innerText = t.eye_aspect_ratio_threshold;
+
+      document.getElementById('cal-mar').value = t.mouth_aspect_ratio_threshold;
+      document.getElementById('cal-mar-val').innerText = t.mouth_aspect_ratio_threshold;
+
+      document.getElementById('cal-yaw').value = t.head_yaw_threshold_degrees;
+      document.getElementById('cal-yaw-val').innerText = `${t.head_yaw_threshold_degrees}°`;
+
+      document.getElementById('cal-phone').value = t.phone_confidence_threshold;
+      document.getElementById('cal-phone-val').innerText = t.phone_confidence_threshold;
+
+      document.getElementById('cal-smoking').value = t.smoking_confidence_threshold;
+      document.getElementById('cal-smoking-val').innerText = t.smoking_confidence_threshold;
+
+      document.getElementById('cal-time').value = t.time_window_seconds;
+      document.getElementById('cal-time-val').innerText = `${t.time_window_seconds}s`;
+
+      openModal('calibrateModal');
+    }
+
+    async function saveCalibratedThresholds() {
+      const driverId = document.getElementById('cal-driver-id').value;
+      const driver = globalData.drivers.find(d => d.id === driverId);
+      if (!driver) return;
+
+      const payload = {
+        name: driver.name,
+        license_number: driver.license_number,
+        experience_years: driver.experience_years,
+        status: driver.status,
+        phone: driver.phone,
+        notes: driver.notes,
+        thresholds: {
+          eye_aspect_ratio_threshold: parseFloat(document.getElementById('cal-ear').value),
+          mouth_aspect_ratio_threshold: parseFloat(document.getElementById('cal-mar').value),
+          head_yaw_threshold_degrees: parseFloat(document.getElementById('cal-yaw').value),
+          phone_confidence_threshold: parseFloat(document.getElementById('cal-phone').value),
+          smoking_confidence_threshold: parseFloat(document.getElementById('cal-smoking').value),
+          time_window_seconds: parseFloat(document.getElementById('cal-time').value)
+        }
+      };
+
+      try {
+        const res = await fetch(`/api/drivers/${driverId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          closeModal('calibrateModal');
+          await fetchData();
+        } else {
+          alert('Failed to update thresholds');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Error saving thresholds to database');
+      }
+    }
+
+    async function submitNewDriver(e) {
+      e.preventDefault();
+      const payload = {
+        name: document.getElementById('new-driver-name').value,
+        license_number: document.getElementById('new-driver-license').value,
+        experience_years: parseInt(document.getElementById('new-driver-exp').value, 10),
+        status: document.getElementById('new-driver-status').value,
+        phone: document.getElementById('new-driver-phone').value,
+        notes: document.getElementById('new-driver-notes').value
+      };
+
+      try {
+        const res = await fetch('/api/drivers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          closeModal('addDriverModal');
+          document.getElementById('add-driver-form').reset();
+          await fetchData();
+          switchTab('drivers');
+        } else {
+          const err = await res.json();
+          alert('Error: ' + JSON.stringify(err.detail || err));
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function deleteDriver(id) {
+      if (!confirm('Are you sure you want to remove this driver profile?')) return;
+      try {
+        await fetch(`/api/drivers/${id}`, { method: 'DELETE' });
+        await fetchData();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function submitNewRoute(e) {
+      e.preventDefault();
+      const driverSelect = document.getElementById('new-route-driver');
+      const driverId = driverSelect.value || null;
+      const driverName = driverId ? driverSelect.options[driverSelect.selectedIndex].text : null;
+      const checkpoints = document.getElementById('new-route-checkpoints').value
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      const payload = {
+        route_name: document.getElementById('new-route-name').value,
+        origin: document.getElementById('new-route-origin').value,
+        destination: document.getElementById('new-route-dest').value,
+        distance_km: parseFloat(document.getElementById('new-route-distance').value),
+        estimated_duration_minutes: parseInt(document.getElementById('new-route-duration').value, 10),
+        speed_limit_kmh: parseInt(document.getElementById('new-route-speed').value, 10),
+        risk_level: document.getElementById('new-route-risk').value,
+        assigned_driver_id: driverId,
+        assigned_driver_name: driverName,
+        checkpoints: checkpoints
+      };
+
+      try {
+        const res = await fetch('/api/routes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          closeModal('addRouteModal');
+          document.getElementById('add-route-form').reset();
+          await fetchData();
+          switchTab('routes');
+        } else {
+          const err = await res.json();
+          alert('Error: ' + JSON.stringify(err.detail || err));
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function deleteRoute(id) {
+      if (!confirm('Are you sure you want to remove this route corridor?')) return;
+      try {
+        await fetch(`/api/routes/${id}`, { method: 'DELETE' });
+        await fetchData();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // Auto-refresh every 8 seconds
+    setInterval(fetchData, 8000);
+    // Initial fetch
+    document.addEventListener('DOMContentLoaded', fetchData);
+  </script>
+</body>
+</html>

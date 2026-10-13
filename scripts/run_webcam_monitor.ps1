@@ -6,11 +6,15 @@
 #
 # Optional parameters:
 #     .\scripts\run_webcam_monitor.ps1 -CameraIndex 1
+#     .\scripts\run_webcam_monitor.ps1 -DriverId "drv-satyapal-001"
+#     .\scripts\run_webcam_monitor.ps1 -DriverId "drv-satyapal-001" -RouteId "rt-pune-mum-exp"
 #     .\scripts\run_webcam_monitor.ps1 -Unified   # Use only the custom fine-tuned model
 # =============================================================================
 
 param(
     [int]$CameraIndex = 0,
+    [string]$DriverId = "",
+    [string]$RouteId = "",
     [switch]$Unified
 )
 
@@ -60,12 +64,26 @@ if ($Unified) {
     $modelInfo = "YOLO11 Phone Detector + Fine-tuned YOLO11s Smoking Detector"
 }
 
+$driverArgs = @()
+if ($DriverId) {
+    $driverArgs += @("--driver-id", $DriverId)
+}
+if ($RouteId) {
+    $driverArgs += @("--route-id", $RouteId)
+}
+
 Write-Host ""
 Write-Host "=============================================" -ForegroundColor Cyan
 Write-Host "  CockpitSentinel - Driver Monitoring System " -ForegroundColor Cyan
 Write-Host "=============================================" -ForegroundColor Cyan
 Write-Host "  Camera  : Index $CameraIndex (built-in / USB webcam)" -ForegroundColor Yellow
 Write-Host "  Models  : $modelInfo" -ForegroundColor Green
+if ($DriverId) {
+    Write-Host "  Driver  : $DriverId" -ForegroundColor Cyan
+}
+if ($RouteId) {
+    Write-Host "  Route   : $RouteId" -ForegroundColor Cyan
+}
 Write-Host "  Signals : EAR  (eye closure)" -ForegroundColor Yellow
 Write-Host "            MAR  (yawning)" -ForegroundColor Yellow
 Write-Host "            Yaw  (head posture / looking away)" -ForegroundColor Yellow
@@ -78,7 +96,7 @@ Write-Host ""
 Write-Host "Starting monitor..." -ForegroundColor Gray
 Write-Host ""
 
-& $venvPy $monScript --source $CameraIndex @distractionArgs
+& $venvPy $monScript --source $CameraIndex @distractionArgs @driverArgs
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Monitor exited with error code $LASTEXITCODE"

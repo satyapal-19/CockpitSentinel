@@ -9,6 +9,7 @@
 <p align="center">
   <a href="#features">Features</a> •
   <a href="#architecture">Architecture</a> •
+  <a href="#dashboard--telemetry">Dashboard</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#usage">Usage</a> •
   <a href="#configuration">Configuration</a> •
@@ -20,12 +21,19 @@
 
 ## Features
 
-| Module                  | What It Detects                    | How                                                           |
+| Module                  | What It Detects / Provides         | How                                                           |
 | ----------------------- | ---------------------------------- | ------------------------------------------------------------- |
-| **Drowsiness**    | Eye closure, yawning, looking away | MediaPipe Face Landmarker → EAR, MAR, head yaw               |
-| **Distraction**   | Phone use, smoking                 | Fine-tuned **YOLO11s** unified detector + OpenVINO / TensorRT |
-| **Risk Scoring**  | 4-level risk assessment            | Weighted signal fusion → SAFE / CAUTION / WARNING / CRITICAL |
-| **Stabilization** | Temporal window (2–3s analysis)   | Multi-second window prevents blink/flicker alarms; clears instantly on attentive return |
+| **Drowsiness**          | Eye closure, yawning, looking away | MediaPipe Face Landmarker → EAR, MAR, head yaw               |
+| **Distraction**         | Phone use, smoking                 | Fine-tuned **YOLO11s** unified detector + OpenVINO / TensorRT |
+| **Risk Scoring**        | 4-level risk assessment            | Weighted signal fusion → SAFE / CAUTION / WARNING / CRITICAL |
+| **Stabilization**       | Temporal window (2–3s analysis)   | Multi-second window prevents blink/flicker alarms; clears instantly on attentive return |
+| **Web Dashboard**       | Fleet UI & calibration sliders    | FastAPI responsive cockpit dashboard with Chart.js analytics |
+| **Driver Profiles**     | Personalized detection thresholds | Custom EAR, MAR, Yaw, Phone/Smoking conf stored in database   |
+| **Route Management**    | Expressways & corridor tracking   | Distance, duration, risk profile, and assigned driver pilots  |
+| **Trip Telemetry**      | Session logs & attention scoring  | Tracks duration, % attentive, frame telemetry, safety rating  |
+| **Alert History**       | Incident audit log feed           | Timestamped alerts with signals, duration, and severity level |
+| **Safety Leaderboard**  | Driver ratings & ranking          | 1–5 star ratings, 0–100 safety score, Gold/Silver badges      |
+| **Hybrid Database**     | Cloud sync with offline fallback  | **MongoDB Atlas** with seamless local **SQLite** fallback     |
 
 ## Architecture
 
@@ -57,8 +65,15 @@ Camera / Video
                    │  WARNING < CRITICAL   │
                    └───────────┬───────────┘
                                │
-                               ▼
-                     OpenCV Live Overlay
+          ┌────────────────────┴────────────────────┐
+          ▼                                         ▼
+ OpenCV Live Overlay HUD                Database & Web Dashboard
+ (Real-time in-cabin display)           (FastAPI + MongoDB / SQLite)
+                                        ├── Driver Profiles & Thresholds
+                                        ├── Route Corridor Tracking
+                                        ├── Trip Session Telemetry
+                                        ├── Alert Incident Audit Feed
+                                        └── Driver Safety Leaderboard
 ```
 
 ## Quick Start
@@ -123,6 +138,9 @@ The setup script will:
 # 1-Click Launch (Auto-detects OpenVINO / YOLO11s distraction model)
 .\scripts\run_webcam_monitor.ps1
 
+# Launch with Driver Profile & Route (loads personalized thresholds & logs trip)
+.\scripts\run_webcam_monitor.ps1 -DriverId "drv-satyapal-001" -RouteId "rt-pune-mum-exp"
+
 # Or with python explicitly using the trained unified model
 cockpit-sentinel --source 0 --distraction-model weights/trained/yolo11s_distraction/best.pt
 
@@ -140,6 +158,49 @@ cockpit-sentinel --source path/to/video.mp4
 > Always use `python scripts\...` or the PowerShell launcher `.\scripts\run_webcam_monitor.ps1`.
 
 Press **Q** or **Esc** to stop the monitor.
+
+---
+
+### Dashboard & Telemetry
+
+CockpitSentinel includes a full-featured web dashboard with persistent database storage, customizable driver sensitivity thresholds, route telemetry, alert audit feeds, and driver safety leaderboards.
+
+#### 1-Click Dashboard Launch
+
+```powershell
+# Launches FastAPI server on http://localhost:8000 and opens your browser
+.\scripts\run_dashboard.ps1
+
+# Custom port
+.\scripts\run_dashboard.ps1 -Port 8080
+```
+
+Or run via Python directly:
+```bash
+uvicorn cockpit_sentinel.dashboard.app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+#### Dashboard Features:
+1. **Fleet Overview & KPI Metrics**: Total active drivers, total logged trips, fleet mileage, average attentiveness index %, incident counts, and safety ratings.
+2. **Driver Profiles & Biometric Calibration**:
+   - Create and manage driver profiles (name, license number, experience, status, avatar, contact).
+   - **Interactive Calibration Sliders**: Adjust Eye Aspect Ratio (EAR), Mouth Aspect Ratio (MAR yawn), Head Yaw turn limit (degrees), Phone Detection Confidence, Smoking Detection Confidence, and Temporal Smoothing Window (seconds). All changes save immediately to MongoDB Atlas / SQLite.
+3. **Route Management**:
+   - Register commercial highways and urban transit corridors (origin, destination, distance in km, estimated travel duration, speed limits, and risk levels: low, moderate, high ghat section, or high-speed expressway).
+   - Assign pilot drivers and define checkpoint milestones.
+4. **Trip Session Telemetry**:
+   - Logs attentive vs. inattentive time, % attention score, total processed frames, average FPS, alert counts, and safety star rating per trip.
+   - Interactive Chart.js trend curves for fleet attention monitoring.
+5. **Alert Incident Audit Feed**:
+   - Audit trail of past distraction & fatigue alerts.
+   - Filter by Driver and Risk Level (Caution, Warning, Critical).
+   - View exact triggered signals (`eyes_closed`, `yawning`, `looking_away`, `phone_detected`, `smoking_detected`), alert duration, and timestamp.
+6. **Driver Safety Ratings & Leaderboard**:
+   - Safety Index (0–100%) and 1–5 star driver ratings.
+   - Dynamic leaderboard with Gold, Silver, and Bronze badges for the safest drivers.
+7. **Hybrid Cloud & Edge Database**:
+   - Connects to **MongoDB Atlas** for centralized fleet telemetry.
+   - Features automatic local **SQLite fallback** (`data/cockpit_sentinel.db`) ensuring vehicular operation runs without disruption even in zero-connectivity tunnels and remote highway zones.
 
 ### What You'll See
 
@@ -209,6 +270,8 @@ Leave these empty to use the repo directory (the default).
 CockpitSentinel/
 ├── src/cockpit_sentinel/         # Main package
 │   ├── alerts/                   #   Alert policy and scoring
+│   ├── dashboard/                #   FastAPI web dashboard & HTML telemetry UI
+│   ├── database/                 #   MongoDB Atlas & SQLite persistence models
 │   ├── detection/                #   Phone & smoking detection (YOLO)
 │   ├── drowsiness/               #   Eye/mouth/head analysis (MediaPipe)
 │   ├── pipeline/                 #   Live monitor and video processing
@@ -216,6 +279,7 @@ CockpitSentinel/
 │   └── domain.py                 #   Core data contracts and risk logic
 ├── configs/                      # YAML configuration files
 ├── scripts/                      # Setup, training, and runner scripts
+│   ├── run_dashboard.ps1         #   1-click telemetry dashboard launcher (port 8000)
 │   ├── run_webcam_monitor.ps1    #   1-click webcam runner (with OpenVINO auto-detect)
 │   ├── run_viva_demo.ps1         #   Demo runner on YawDD video
 │   ├── download_distraction_dataset.py # Roboflow dataset downloader
@@ -227,7 +291,7 @@ CockpitSentinel/
 │   ├── setup_environment.py      #   Cross-platform setup logic
 │   └── verify_environment.py     #   Environment validator
 ├── tests/
-│   ├── unit/                     #   37 unit tests (100% pass)
+│   ├── unit/                     #   49 unit tests (100% pass)
 │   └── integration/              #   Integration tests (planned)
 ├── notebooks/
 │   └── train_yolo11_distraction_colab.ipynb # 1-Click Colab training notebook
@@ -242,17 +306,20 @@ CockpitSentinel/
 
 ## Environment Variables
 
-The `.env` file is optional. If unset, everything defaults to the repo directory.
+The `.env` file is optional. If unset, sensible defaults are used:
 
 | Variable                | Purpose                                 | Default                                 |
 | ----------------------- | --------------------------------------- | --------------------------------------- |
-| `COCKPIT_DATA_ROOT`   | Root directory for datasets and storage | _(repo directory)_                    |
-| `COCKPIT_MODELS_ROOT` | Root directory for model files          | _(repo directory)/models_             |
-| `MLFLOW_TRACKING_URI` | MLflow experiment store                 | _(repo directory)/experiments/mlruns_ |
-| `LOG_LEVEL`           | Application log level                   | `INFO`                                |
-| `WEBCAM_INDEX`        | Default webcam device                   | `0`                                   |
-| `KAGGLE_USERNAME`     | Kaggle API username                     | _(empty)_                             |
-| `KAGGLE_KEY`          | Kaggle API key                          | _(empty)_                             |
+| `MONGODB_URI`           | MongoDB Atlas connection string         | _(cluster URI or auto fallback)_       |
+| `DATABASE_BACKEND`      | Database backend (`mongodb`, `sqlite`, `auto`) | `auto` (Atlas primary, SQLite fallback) |
+| `DASHBOARD_PORT`        | Local port for web dashboard            | `8000`                                  |
+| `COCKPIT_DATA_ROOT`     | Root directory for datasets and storage | _(repo directory)_                    |
+| `COCKPIT_MODELS_ROOT`   | Root directory for model files          | _(repo directory)/models_             |
+| `MLFLOW_TRACKING_URI`   | MLflow experiment store                 | _(repo directory)/experiments/mlruns_ |
+| `LOG_LEVEL`             | Application log level                   | `INFO`                                |
+| `WEBCAM_INDEX`          | Default webcam device                   | `0`                                   |
+| `KAGGLE_USERNAME`       | Kaggle API username                     | _(empty)_                             |
+| `KAGGLE_KEY`            | Kaggle API key                          | _(empty)_                             |
 
 ## NVIDIA GPU Setup
 

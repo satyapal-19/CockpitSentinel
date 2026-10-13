@@ -7,6 +7,7 @@ import os
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
 
@@ -16,12 +17,14 @@ import numpy as np
 from cockpit_sentinel.alerts.policy import AlertPolicy, load_alert_policy
 from cockpit_sentinel.detection import (
     DistractionAnalysis,
+    DistractionConfig,
     DistractionDetector,
     load_distraction_config,
 )
 from cockpit_sentinel.domain import DriverSignals, RiskAssessment, RiskLevel
 from cockpit_sentinel.drowsiness import (
     DrowsinessAnalysis,
+    DrowsinessConfig,
     DrowsinessDetector,
     load_drowsiness_config,
 )
@@ -132,6 +135,17 @@ class TripTracker:
         self._fps = 0.0
         self._total_frames = 0
 
+    @property
+    def current_stats(self) -> TripStats:
+        """Return the current trip statistics snapshot."""
+        return TripStats(
+            total_seconds=self._total_seconds,
+            attentive_seconds=self._attentive_seconds,
+            inattentive_seconds=self._inattentive_seconds,
+            fps=self._fps,
+            total_frames=self._total_frames,
+        )
+
 
 class TemporalSignalStabilizer:
     """Track signal durations in seconds over a sliding time window (2.0-3.0s).
@@ -238,6 +252,11 @@ class LiveMonitor:
             signal_thresholds=signal_thresholds,
         )
         self._trip_tracker = TripTracker()
+
+    @property
+    def trip_tracker(self) -> TripTracker:
+        """Access the underlying trip tracker."""
+        return self._trip_tracker
 
     def process(self, frame: np.ndarray, timestamp: float | None = None) -> MonitorFrame:
         analysis = self._detector.analyze(frame)
@@ -461,12 +480,35 @@ def run_live_monitor(
     policy: AlertPolicy,
     distraction_detector: DistractionAnalyzer | None = None,
     time_window_seconds: float = 2.0,
+    driver_id: str | None = None,
+    route_id: str | None = None,
 ) -> None:
     """Open a webcam or video file and show processed frames until Q or Esc is pressed."""
 
     capture = cv2.VideoCapture(source)
     if not capture.isOpened():
         raise RuntimeError(f"Could not open video source: {source}")
+
+    db = None
+    driver_profile = None
+    route_obj = None
+    session_alerts_count = 0
+    last_alert_time = 0.0
+    trip_id = f"trp-{int(time.time())}"
+    trip_start_iso = datetime.now(timezone.utc).isoformat()
+
+    if driver_id:
+        try:
+            from cockpit_sentinel.database.client import get_db_manager
+            from cockpit_sentinel.database.models import AlertIncident, TripSession
+
+            db = get_db_manager()
+            driver_profile = db.get_driver(driver_id)
+            if route_id:
+                route_obj = db.get_route(route_id)
+        except Exception as exc:
+            print(f"[DATABASE NOTICE] Operating without database synchronization: {exc}")
+            db = None
 
     monitor = LiveMonitor(
         detector,
@@ -480,6 +522,54 @@ def run_live_monitor(
             if not ok:
                 break
             processed = monitor.process(frame)
+
+            # Audit logging of WARNING/CRITICAL incidents
+            now = time.monotonic()
+            if (
+                db
+                and driver_profile
+                and processed.assessment.level in (RiskLevel.WARNING, RiskLevel.CRITICAL)
+            ):
+                if now - last_alert_time >= 3.5:
+                    last_alert_time = now
+                    session_alerts_count += 1
+                    try:
+                        active_sigs = [
+                            s
+                            for s in (
+                                "eyes_closed",
+                                "yawning",
+                                "looking_away",
+                                "phone_detected",
+                                "smoking_detected",
+                            )
+                            if getattr(processed.analysis.signals, s, False)
+                            or (
+                                processed.distraction
+                                and getattr(processed.distraction.signals, s, False)
+                            )
+                        ]
+                        dur = 1.0
+                        if processed.active_durations:
+                            dur = max(processed.active_durations.values()) or 1.0
+                        incident = AlertIncident(
+                            trip_id=trip_id,
+                            driver_id=driver_profile.id,
+                            driver_name=driver_profile.name,
+                            route_name=route_obj.route_name
+                            if route_obj
+                            else "Active Highway Corridor",
+                            timestamp=datetime.now(timezone.utc).isoformat(),
+                            risk_level=processed.assessment.level.value,
+                            risk_score=processed.assessment.score,
+                            active_signals=active_sigs,
+                            duration_seconds=round(dur, 1),
+                            notes=f"Triggered by: {', '.join(processed.assessment.reasons) or 'driver distraction'}",
+                        )
+                        db.save_alert(incident)
+                    except Exception:
+                        pass
+
             cv2.imshow(WINDOW_TITLE, processed.image)
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):
@@ -487,6 +577,36 @@ def run_live_monitor(
     finally:
         capture.release()
         cv2.destroyAllWindows()
+        if db and driver_profile:
+            try:
+                stats = monitor.trip_tracker.current_stats
+                safety_rating = round(min(5.0, max(1.0, stats.attention_score / 20.0)), 2)
+                trip_session = TripSession(
+                    id=trip_id,
+                    driver_id=driver_profile.id,
+                    driver_name=driver_profile.name,
+                    route_id=route_obj.id if route_obj else None,
+                    route_name=route_obj.route_name if route_obj else "Direct Transit",
+                    start_time=trip_start_iso,
+                    end_time=datetime.now(timezone.utc).isoformat(),
+                    duration_seconds=round(stats.total_seconds, 1),
+                    attentive_seconds=round(stats.attentive_seconds, 1),
+                    inattentive_seconds=round(stats.inattentive_seconds, 1),
+                    attention_score=round(stats.attention_score, 1),
+                    total_frames=stats.total_frames,
+                    average_fps=round(stats.fps, 1),
+                    alert_count=session_alerts_count,
+                    safety_rating=safety_rating,
+                    status="completed",
+                )
+                db.save_trip(trip_session)
+                print("\n" + "=" * 62)
+                print(f" [DATABASE] Trip session saved for {driver_profile.name}")
+                print(f" Duration: {stats.formatted_trip_time} | Attentive: {stats.attention_score:.1f}%")
+                print(f" Alerts Logged: {session_alerts_count} | Trip Safety Rating: {safety_rating}/5.0")
+                print("=" * 62 + "\n")
+            except Exception as err:
+                print(f"[DATABASE WARNING] Could not persist trip session: {err}")
 
 
 def parse_source(value: str) -> int | str:
@@ -570,6 +690,18 @@ def main() -> None:
         default=None,
         help="Path to alert policy YAML configuration file.",
     )
+    parser.add_argument(
+        "--driver-id",
+        type=str,
+        default=None,
+        help="Driver profile ID to load custom thresholds and record trip telemetry.",
+    )
+    parser.add_argument(
+        "--route-id",
+        type=str,
+        default=None,
+        help="Route corridor ID for trip telemetry tracking.",
+    )
     args = parser.parse_args()
 
     model_path = args.model_path or resolve_model_path("face_landmarker.task", args.models_root)
@@ -620,12 +752,51 @@ def main() -> None:
     distraction_config = load_distraction_config(distraction_cfg_path)
     alert_policy = load_alert_policy(alerts_cfg_path)
 
-    target_device = resolve_device(args.device)
     time_window_sec = (
         args.time_window
         if args.time_window is not None
         else getattr(alert_policy, "time_window_seconds", 2.0)
     )
+
+    if args.driver_id:
+        try:
+            from cockpit_sentinel.database.client import get_db_manager
+
+            db = get_db_manager()
+            drv = db.get_driver(args.driver_id)
+            if drv:
+                t = drv.thresholds
+                drowsiness_config = DrowsinessConfig(
+                    eye_aspect_ratio_threshold=t.eye_aspect_ratio_threshold,
+                    mouth_aspect_ratio_threshold=t.mouth_aspect_ratio_threshold,
+                    head_yaw_threshold_degrees=t.head_yaw_threshold_degrees,
+                    minimum_consecutive_frames=drowsiness_config.minimum_consecutive_frames,
+                )
+                distraction_config = DistractionConfig(
+                    phone_confidence_threshold=t.phone_confidence_threshold,
+                    smoking_confidence_threshold=t.smoking_confidence_threshold,
+                    smoking_labels=distraction_config.smoking_labels,
+                )
+                time_window_sec = t.time_window_seconds
+                alert_policy = AlertPolicy(
+                    weights=alert_policy.weights,
+                    caution_score=t.caution_score,
+                    warning_score=t.warning_score,
+                    critical_score=t.critical_score,
+                    time_window_seconds=t.time_window_seconds,
+                )
+                print("\n" + "=" * 62)
+                print(f" PROFILE LOADED: {drv.name} ({drv.license_number})")
+                print(f" Status: {drv.status.upper()} | Rating: {drv.rating}★ | Safety Score: {drv.safety_score}%")
+                print(f" Custom EAR: {t.eye_aspect_ratio_threshold} | MAR: {t.mouth_aspect_ratio_threshold} | Yaw: {t.head_yaw_threshold_degrees}°")
+                print(f" Phone Conf: {t.phone_confidence_threshold} | Smoking Conf: {t.smoking_confidence_threshold} | Window: {time_window_sec}s")
+                print("=" * 62 + "\n")
+            else:
+                print(f"[WARNING] Driver ID '{args.driver_id}' not found in database. Using defaults.")
+        except Exception as exc:
+            print(f"[DATABASE NOTICE] Unable to load driver profile from database ({exc}). Using defaults.")
+
+    target_device = resolve_device(args.device)
 
     print(
         f"CockpitSentinel starting on device: {target_device} "
@@ -649,6 +820,8 @@ def main() -> None:
                 alert_policy,
                 distraction_detector,
                 time_window_seconds=time_window_sec,
+                driver_id=args.driver_id,
+                route_id=args.route_id,
             )
     except KeyboardInterrupt:
         print("\nMonitor interrupted by user. Exiting cleanly.")
