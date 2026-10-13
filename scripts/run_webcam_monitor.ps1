@@ -6,12 +6,12 @@
 #
 # Optional parameters:
 #     .\scripts\run_webcam_monitor.ps1 -CameraIndex 1
-#     .\scripts\run_webcam_monitor.ps1 -UsePyTorch
+#     .\scripts\run_webcam_monitor.ps1 -Unified   # Use only the custom fine-tuned model
 # =============================================================================
 
 param(
     [int]$CameraIndex = 0,
-    [switch]$UsePyTorch
+    [switch]$Unified
 )
 
 Set-StrictMode -Version Latest
@@ -32,19 +32,32 @@ if (-not (Test-Path -LiteralPath $monScript)) {
     exit 1
 }
 
-# Auto-detect trained unified YOLO11s distraction model
-$openvinoModel = Join-Path $repoRoot "weights\trained\yolo11s_distraction\best_openvino_model"
-$pytorchModel  = Join-Path $repoRoot "weights\trained\yolo11s_distraction\best.pt"
+# 1. Best Phone Model: YOLO11 COCO (specialized in detecting the physical cell phone object)
+$phoneModel = Join-Path $repoRoot "yolo11n.pt"
+if (-not (Test-Path -LiteralPath $phoneModel)) {
+    $phoneModel = "D:\CockpitSentinel\models\pretrained\yolov8n.pt"
+}
 
-$distractionArgs = @()
-$modelInfo = "Default pretrained models"
+# 2. Best Smoking Model: Fine-tuned YOLO11s (specialized in cigarette & smoke detection)
+$smokingModel = Join-Path $repoRoot "weights\trained\yolo11s_distraction\best_openvino_model"
+if (-not (Test-Path -LiteralPath $smokingModel)) {
+    $smokingModel = Join-Path $repoRoot "weights\trained\yolo11s_distraction\best.pt"
+}
+if (-not (Test-Path -LiteralPath $smokingModel)) {
+    $smokingModel = "D:\CockpitSentinel\models\pretrained\yolov8s-worldv2.pt"
+}
 
-if (-not $UsePyTorch -and (Test-Path -LiteralPath $openvinoModel)) {
-    $distractionArgs = @("--distraction-model", $openvinoModel)
-    $modelInfo = "Trained YOLO11s (OpenVINO Intel CPU accelerated)"
-} elseif (Test-Path -LiteralPath $pytorchModel) {
-    $distractionArgs = @("--distraction-model", $pytorchModel)
-    $modelInfo = "Trained YOLO11s (PyTorch)"
+if ($Unified) {
+    # Run strictly the unified fine-tuned model for both
+    $distractionArgs = @("--distraction-model", $smokingModel)
+    $modelInfo = "Unified YOLO11s Distraction Model ($smokingModel)"
+} else {
+    # Best-in-class hybrid: Dedicated COCO Phone Detector + Fine-tuned Smoking Detector
+    $distractionArgs = @(
+        "--phone-model-path", $phoneModel,
+        "--smoking-model-path", $smokingModel
+    )
+    $modelInfo = "YOLO11 Phone Detector + Fine-tuned YOLO11s Smoking Detector"
 }
 
 Write-Host ""
@@ -56,7 +69,8 @@ Write-Host "  Models  : $modelInfo" -ForegroundColor Green
 Write-Host "  Signals : EAR  (eye closure)" -ForegroundColor Yellow
 Write-Host "            MAR  (yawning)" -ForegroundColor Yellow
 Write-Host "            Yaw  (head posture / looking away)" -ForegroundColor Yellow
-Write-Host "            Phone & Smoking (YOLO11s detection)" -ForegroundColor Yellow
+Write-Host "            Phone Detection (YOLO11 'cell phone')" -ForegroundColor Yellow
+Write-Host "            Smoking Detection (Fine-tuned 'smoke')" -ForegroundColor Yellow
 Write-Host "  Levels  : SAFE -> CAUTION -> WARNING -> CRITICAL" -ForegroundColor Yellow
 Write-Host "  Stop    : Press Q or Esc in the video window" -ForegroundColor Yellow
 Write-Host "=============================================" -ForegroundColor Cyan

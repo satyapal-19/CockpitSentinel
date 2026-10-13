@@ -193,11 +193,15 @@ class DistractionDetector:
                 model.to(device)
         return model
 
-    def _load_smoking_model(self, path: Path, device: str | None = None) -> YOLOWorld:
+    def _load_smoking_model(self, path: Path, device: str | None = None) -> Any:
         if not path.exists():
             raise FileNotFoundError(f"Smoking detection model was not found: {path}")
-        model = YOLOWorld(path)
-        model.set_classes(list(self.config.smoking_labels))
+        if "world" in str(path).lower():
+            model = YOLOWorld(path)
+            with contextlib.suppress(Exception):
+                model.set_classes(list(self.config.smoking_labels))
+        else:
+            model = YOLO(path)
         if device is not None:
             with contextlib.suppress(Exception):
                 model.to(device)
