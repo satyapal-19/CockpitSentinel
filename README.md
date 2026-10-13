@@ -1,3 +1,5 @@
+git 
+
 <h1 align="center">
   🚗 CockpitSentinel
 </h1>
@@ -21,19 +23,19 @@
 
 ## Features
 
-| Module                  | What It Detects / Provides         | How                                                           |
-| ----------------------- | ---------------------------------- | ------------------------------------------------------------- |
-| **Drowsiness**          | Eye closure, yawning, looking away | MediaPipe Face Landmarker → EAR, MAR, head yaw               |
-| **Distraction**         | Phone use, smoking                 | Fine-tuned **YOLO11s** unified detector + OpenVINO / TensorRT |
-| **Risk Scoring**        | 4-level risk assessment            | Weighted signal fusion → SAFE / CAUTION / WARNING / CRITICAL |
-| **Stabilization**       | Temporal window (2–3s analysis)   | Multi-second window prevents blink/flicker alarms; clears instantly on attentive return |
-| **Web Dashboard**       | Fleet UI & calibration sliders    | FastAPI responsive cockpit dashboard with Chart.js analytics |
-| **Driver Profiles**     | Personalized detection thresholds | Custom EAR, MAR, Yaw, Phone/Smoking conf stored in database   |
-| **Route Management**    | Expressways & corridor tracking   | Distance, duration, risk profile, and assigned driver pilots  |
-| **Trip Telemetry**      | Session logs & attention scoring  | Tracks duration, % attentive, frame telemetry, safety rating  |
-| **Alert History**       | Incident audit log feed           | Timestamped alerts with signals, duration, and severity level |
-| **Safety Leaderboard**  | Driver ratings & ranking          | 1–5 star ratings, 0–100 safety score, Gold/Silver badges      |
-| **Hybrid Database**     | Cloud sync with offline fallback  | **MongoDB Atlas** with seamless local **SQLite** fallback     |
+| Module                       | What It Detects / Provides         | How                                                                                     |
+| ---------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------- |
+| **Drowsiness**         | Eye closure, yawning, looking away | MediaPipe Face Landmarker → EAR, MAR, head yaw                                         |
+| **Distraction**        | Phone use, smoking                 | Fine-tuned**YOLO11s** unified detector + OpenVINO / TensorRT                      |
+| **Risk Scoring**       | 4-level risk assessment            | Weighted signal fusion → SAFE / CAUTION / WARNING / CRITICAL                           |
+| **Stabilization**      | Temporal window (2–3s analysis)   | Multi-second window prevents blink/flicker alarms; clears instantly on attentive return |
+| **Web Dashboard**      | Fleet UI & calibration sliders     | FastAPI responsive cockpit dashboard with Chart.js analytics                            |
+| **Driver Profiles**    | Personalized detection thresholds  | Custom EAR, MAR, Yaw, Phone/Smoking conf stored in database                             |
+| **Route Management**   | Expressways & corridor tracking    | Distance, duration, risk profile, and assigned driver pilots                            |
+| **Trip Telemetry**     | Session logs & attention scoring   | Tracks duration, % attentive, frame telemetry, safety rating                            |
+| **Alert History**      | Incident audit log feed            | Timestamped alerts with signals, duration, and severity level                           |
+| **Safety Leaderboard** | Driver ratings & ranking           | 1–5 star ratings, 0–100 safety score, Gold/Silver badges                              |
+| **Hybrid Database**    | Cloud sync with offline fallback   | **MongoDB Atlas** with seamless local **SQLite** fallback                   |
 
 ## Architecture
 
@@ -176,11 +178,13 @@ CockpitSentinel includes a full-featured web dashboard with persistent database 
 ```
 
 Or run via Python directly:
+
 ```bash
 uvicorn cockpit_sentinel.dashboard.app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 #### Dashboard Features:
+
 1. **Fleet Overview & KPI Metrics**: Total active drivers, total logged trips, fleet mileage, average attentiveness index %, incident counts, and safety ratings.
 2. **Driver Profiles & Biometric Calibration**:
    - Create and manage driver profiles (name, license number, experience, status, avatar, contact).
@@ -229,11 +233,11 @@ Alerts are evaluated over a **2.0 to 3.0 second temporal window** (configurable 
 
 | Signal           | Weight | Threshold         | Temporal Confirmation |
 | ---------------- | ------ | ----------------- | --------------------- |
-| Eyes closed      | 3      | EAR < 0.22        | ≥ 2.0s sustained      |
-| Yawning          | 2      | MAR > 0.60        | ≥ 2.5s sustained      |
-| Looking away     | 2      | Head yaw > 30°   | ≥ 2.0s sustained      |
-| Phone detected   | 4      | Confidence > 0.40 | ≥ 2.0s sustained      |
-| Smoking detected | 3      | Confidence > 0.35 | ≥ 2.0s sustained      |
+| Eyes closed      | 3      | EAR < 0.22        | ≥ 2.0s sustained     |
+| Yawning          | 2      | MAR > 0.60        | ≥ 2.5s sustained     |
+| Looking away     | 2      | Head yaw > 30°   | ≥ 2.0s sustained     |
+| Phone detected   | 4      | Confidence > 0.40 | ≥ 2.0s sustained     |
+| Smoking detected | 3      | Confidence > 0.35 | ≥ 2.0s sustained     |
 
 **Risk levels:** SAFE (< 2) · CAUTION (≥ 2) · WARNING (≥ 4) · CRITICAL (≥ 6)
 
@@ -308,18 +312,18 @@ CockpitSentinel/
 
 The `.env` file is optional. If unset, sensible defaults are used:
 
-| Variable                | Purpose                                 | Default                                 |
-| ----------------------- | --------------------------------------- | --------------------------------------- |
-| `MONGODB_URI`           | MongoDB Atlas connection string         | _(cluster URI or auto fallback)_       |
-| `DATABASE_BACKEND`      | Database backend (`mongodb`, `sqlite`, `auto`) | `auto` (Atlas primary, SQLite fallback) |
-| `DASHBOARD_PORT`        | Local port for web dashboard            | `8000`                                  |
-| `COCKPIT_DATA_ROOT`     | Root directory for datasets and storage | _(repo directory)_                    |
-| `COCKPIT_MODELS_ROOT`   | Root directory for model files          | _(repo directory)/models_             |
-| `MLFLOW_TRACKING_URI`   | MLflow experiment store                 | _(repo directory)/experiments/mlruns_ |
-| `LOG_LEVEL`             | Application log level                   | `INFO`                                |
-| `WEBCAM_INDEX`          | Default webcam device                   | `0`                                   |
-| `KAGGLE_USERNAME`       | Kaggle API username                     | _(empty)_                             |
-| `KAGGLE_KEY`            | Kaggle API key                          | _(empty)_                             |
+| Variable                | Purpose                                              | Default                                   |
+| ----------------------- | ---------------------------------------------------- | ----------------------------------------- |
+| `MONGODB_URI`         | MongoDB Atlas connection string                      | _(cluster URI or auto fallback)_        |
+| `DATABASE_BACKEND`    | Database backend (`mongodb`, `sqlite`, `auto`) | `auto` (Atlas primary, SQLite fallback) |
+| `DASHBOARD_PORT`      | Local port for web dashboard                         | `8000`                                  |
+| `COCKPIT_DATA_ROOT`   | Root directory for datasets and storage              | _(repo directory)_                      |
+| `COCKPIT_MODELS_ROOT` | Root directory for model files                       | _(repo directory)/models_               |
+| `MLFLOW_TRACKING_URI` | MLflow experiment store                              | _(repo directory)/experiments/mlruns_   |
+| `LOG_LEVEL`           | Application log level                                | `INFO`                                  |
+| `WEBCAM_INDEX`        | Default webcam device                                | `0`                                     |
+| `KAGGLE_USERNAME`     | Kaggle API username                                  | _(empty)_                               |
+| `KAGGLE_KEY`          | Kaggle API key                                       | _(empty)_                               |
 
 ## NVIDIA GPU Setup
 
