@@ -80,13 +80,18 @@ def load_distraction_config(path: Path) -> DistractionConfig:
     )
 
 
+DEFAULT_PHONE_LABELS = frozenset(
+    {"cell phone", "phone", "using_phone", "mobile_phone", "calling", "texting"}
+)
+
+
 class DistractionDetector:
     """Detect phone use and smoking-related objects from BGR video frames."""
 
     def __init__(
         self,
         phone_model_path: Path,
-        smoking_model_path: Path,
+        smoking_model_path: Path | None = None,
         config: DistractionConfig | None = None,
         *,
         phone_model: ObjectDetector | None = None,
@@ -95,10 +100,21 @@ class DistractionDetector:
     ) -> None:
         self.config = config or DistractionConfig()
         self.device = resolve_device(device) if device is not None else None
-        self._phone_model = phone_model or self._load_phone_model(phone_model_path, self.device)
-        self._smoking_model = smoking_model or self._load_smoking_model(
-            smoking_model_path, self.device
-        )
+
+        # Check if caller wants a single unified model (same model path or explicitly identical model)
+        is_same_path = (smoking_model_path is None) or (phone_model_path == smoking_model_path)
+        is_same_object = (phone_model is not None) and (phone_model is smoking_model)
+
+        if is_same_path or is_same_object:
+            self._phone_model = phone_model or self._load_phone_model(phone_model_path, self.device)
+            self._smoking_model = self._phone_model
+            self._is_unified = True
+        else:
+            self._phone_model = phone_model or self._load_phone_model(phone_model_path, self.device)
+            self._smoking_model = smoking_model or self._load_smoking_model(
+                smoking_model_path, self.device  # type: ignore[arg-type]
+            )
+            self._is_unified = False
 
     def close(self) -> None:
         """Release any device or model resources."""
@@ -111,7 +127,7 @@ class DistractionDetector:
         self.close()
 
     def analyze(self, frame: np.ndarray) -> DistractionAnalysis:
-        """Run both object detectors and return only the relevant risk signals."""
+        """Run object detector(s) and return the relevant risk signals."""
 
         if frame.ndim != 3 or frame.shape[2] != 3:
             raise ValueError("Expected a three-channel BGR frame.")
@@ -120,20 +136,43 @@ class DistractionDetector:
         if self.device is not None:
             predict_kwargs["device"] = self.device
 
-        phone_confidence, phone_boxes = _extract_detections(
-            self._phone_model(
-                frame, conf=self.config.phone_confidence_threshold, **predict_kwargs
-            ),
-            {"cell phone"},
-            frame_shape=frame.shape[:2],
-        )
-        smoking_confidence, smoking_boxes = _extract_detections(
-            self._smoking_model(
-                frame, conf=self.config.smoking_confidence_threshold, **predict_kwargs
-            ),
-            set(self.config.smoking_labels),
-            frame_shape=frame.shape[:2],
-        )
+        smoking_targets = set(self.config.smoking_labels)
+
+        if self._is_unified:
+            # Single forward pass for both phone and smoking detection
+            min_conf = min(
+                self.config.phone_confidence_threshold, self.config.smoking_confidence_threshold
+            )
+            results = self._phone_model(frame, conf=min_conf, **predict_kwargs)
+            phone_confidence, phone_boxes = _extract_detections(
+                results,
+                DEFAULT_PHONE_LABELS,
+                frame_shape=frame.shape[:2],
+                min_confidence=self.config.phone_confidence_threshold,
+            )
+            smoking_confidence, smoking_boxes = _extract_detections(
+                results,
+                smoking_targets,
+                frame_shape=frame.shape[:2],
+                min_confidence=self.config.smoking_confidence_threshold,
+            )
+        else:
+            # Dual model pass (legacy separate phone + YOLO-World smoking)
+            phone_confidence, phone_boxes = _extract_detections(
+                self._phone_model(
+                    frame, conf=self.config.phone_confidence_threshold, **predict_kwargs
+                ),
+                DEFAULT_PHONE_LABELS,
+                frame_shape=frame.shape[:2],
+            )
+            smoking_confidence, smoking_boxes = _extract_detections(
+                self._smoking_model(
+                    frame, conf=self.config.smoking_confidence_threshold, **predict_kwargs
+                ),
+                smoking_targets,
+                frame_shape=frame.shape[:2],
+            )
+
         return DistractionAnalysis(
             signals=DriverSignals(
                 phone_detected=phone_confidence is not None,
@@ -167,8 +206,9 @@ class DistractionDetector:
 
 def _extract_detections(
     results: Sequence[Any],
-    target_labels: set[str],
+    target_labels: set[str] | frozenset[str],
     frame_shape: tuple[int, int] | None = None,
+    min_confidence: float | None = None,
 ) -> tuple[float | None, list[DetectionBox]]:
     """Extract highest confidence score and bounding boxes for matching target labels."""
     highest: float | None = None
@@ -190,6 +230,8 @@ def _extract_detections(
                 continue
 
             confidence = float(box.conf[0])
+            if min_confidence is not None and confidence < min_confidence:
+                continue
 
             coords = (0, 0, 0, 0)
             xyxy = getattr(box, "xyxy", None)

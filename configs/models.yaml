@@ -14,4 +14,11 @@ pretrained:
     source: ultralytics
     purpose: text-prompted smoking-related object detection
 
-trained: {}
+trained:
+  yolo11s_distraction:
+    path: "{models_root}/trained/yolo11s_distraction/best.pt"
+    openvino_path: "{models_root}/trained/yolo11s_distraction/best_openvino_model"
+    onnx_path: "{models_root}/trained/yolo11s_distraction/best.onnx"
+    source: ultralytics-yolo11
+    purpose: unified phone and smoking distraction detection
+

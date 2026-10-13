@@ -529,6 +529,12 @@ def main() -> None:
         help="Path to MediaPipe face landmarker model (.task).",
     )
     parser.add_argument(
+        "--distraction-model",
+        type=Path,
+        default=None,
+        help="Path to unified YOLO distraction model (.pt, .engine, or openvino dir).",
+    )
+    parser.add_argument(
         "--phone-model-path",
         type=Path,
         default=None,
@@ -567,17 +573,24 @@ def main() -> None:
     args = parser.parse_args()
 
     model_path = args.model_path or resolve_model_path("face_landmarker.task", args.models_root)
-    phone_model_path = args.phone_model_path or resolve_model_path("yolov8n.pt", args.models_root)
-    smoking_model_path = args.smoking_model_path or resolve_model_path(
-        "yolov8s-worldv2.pt", args.models_root
-    )
+    if args.distraction_model is not None:
+        phone_model_path = args.distraction_model
+        smoking_model_path = args.distraction_model
+    else:
+        phone_model_path = args.phone_model_path or resolve_model_path("yolov8n.pt", args.models_root)
+        smoking_model_path = args.smoking_model_path or resolve_model_path(
+            "yolov8s-worldv2.pt", args.models_root
+        )
+
+    model_checks: list[tuple[str, Path]] = [("Face Landmarker", model_path)]
+    if phone_model_path == smoking_model_path:
+        model_checks.append(("Distraction Detector", phone_model_path))
+    else:
+        model_checks.append(("Phone Detector", phone_model_path))
+        model_checks.append(("Smoking Detector", smoking_model_path))
 
     missing_models: list[str] = []
-    for name, path in [
-        ("Face Landmarker", model_path),
-        ("Phone Detector", phone_model_path),
-        ("Smoking Detector", smoking_model_path),
-    ]:
+    for name, path in model_checks:
         if not path.exists():
             missing_models.append(f"  - {name}: {path}")
 

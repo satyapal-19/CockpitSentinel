@@ -96,3 +96,25 @@ def test_distraction_detector_extracts_bounding_boxes():
     assert analysis.detections[0].box == (10, 20, 100, 150)
     assert analysis.detections[0].label == "cell phone"
     assert analysis.detections[0].confidence == pytest.approx(0.85)
+
+
+def test_distraction_detector_single_unified_model():
+    # Single model that outputs both phone and cigarette in a single forward pass
+    boxes = [
+        FakeBoxWithCoords(0, 0.92, (10, 20, 100, 150)),
+        FakeBoxWithCoords(1, 0.78, (200, 250, 240, 280)),
+    ]
+    unified_model = FakeModel(FakeResult({0: "phone", 1: "cigarette"}, boxes))
+
+    detector = DistractionDetector(
+        Path("unified_distraction.pt"),
+        phone_model=unified_model,
+        smoking_model=unified_model,
+    )
+
+    analysis = detector.analyze(np.zeros((480, 640, 3), dtype=np.uint8))
+    assert analysis.signals.phone_detected
+    assert analysis.signals.smoking_detected
+    assert analysis.phone_confidence == pytest.approx(0.92)
+    assert analysis.smoking_confidence == pytest.approx(0.78)
+    assert len(analysis.detections) == 2

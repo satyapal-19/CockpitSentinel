@@ -56,10 +56,12 @@ htmlcov/
 # IDE (keep shared .vscode settings, ignore personal overrides)
 .vscode/settings.local.json
 
-# OS
+# OS & Archives
 Thumbs.db
 Desktop.ini
 .DS_Store
+*.lnk
+*.zip
 
 # Presentation and document artifacts
 *.pptx

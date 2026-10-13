@@ -23,7 +23,7 @@
 | Module                  | What It Detects                    | How                                                           |
 | ----------------------- | ---------------------------------- | ------------------------------------------------------------- |
 | **Drowsiness**    | Eye closure, yawning, looking away | MediaPipe Face Landmarker → EAR, MAR, head yaw               |
-| **Distraction**   | Phone use, smoking                 | YOLOv8 + YOLOWorld object detection                           |
+| **Distraction**   | Phone use, smoking                 | Fine-tuned **YOLO11s** unified detector + OpenVINO / TensorRT |
 | **Risk Scoring**  | 4-level risk assessment            | Weighted signal fusion → SAFE / CAUTION / WARNING / CRITICAL |
 | **Stabilization** | Temporal window (2–3s analysis)   | Multi-second window prevents blink/flicker alarms; clears instantly on attentive return |
 
@@ -38,7 +38,7 @@ Camera / Video
       ├──────────────────────────────────┐
       ▼                                  ▼
   DrowsinessDetector                DistractionDetector
-  (MediaPipe Face Landmarker)       (YOLOv8 + YOLOWorld)
+  (MediaPipe Face Landmarker)       (Unified YOLO11s / OpenVINO)
       │                                  │
       │  eyes_closed                     │  phone_detected
       │  yawning                         │  smoking_detected
@@ -119,23 +119,25 @@ The setup script will:
 
 ### Run the Live Monitor
 
-```bash
-# Using the installed command (recommended)
-cockpit-sentinel
+```powershell
+# 1-Click Launch (Auto-detects OpenVINO / YOLO11s distraction model)
+.\scripts\run_webcam_monitor.ps1
 
-# Or with python explicitly
-python scripts/run_drowsiness_monitor.py
+# Or with python explicitly using the trained unified model
+cockpit-sentinel --source 0 --distraction-model weights/trained/yolo11s_distraction/best.pt
+
+# Intel CPU accelerated with OpenVINO
+cockpit-sentinel --source 0 --distraction-model weights/trained/yolo11s_distraction/best_openvino_model
 
 # From a video file instead of webcam
 cockpit-sentinel --source path/to/video.mp4
 
-# Custom webcam index
-cockpit-sentinel --source 1
+# Run with demo YawDD video
+.\scripts\run_viva_demo.ps1
 ```
 
 > **⚠️ Windows users:** Do NOT run `.py` files directly (e.g., `.\scripts\run_drowsiness_monitor.py`).
-> This may open your IDE instead of executing the script.
-> Always use `python scripts\...` or the `cockpit-sentinel` command.
+> Always use `python scripts\...` or the PowerShell launcher `.\scripts\run_webcam_monitor.ps1`.
 
 Press **Q** or **Esc** to stop the monitor.
 
@@ -213,16 +215,25 @@ CockpitSentinel/
 │   ├── utils/                    #   Shared helpers
 │   └── domain.py                 #   Core data contracts and risk logic
 ├── configs/                      # YAML configuration files
-├── scripts/                      # Setup, verification, and runner scripts
+├── scripts/                      # Setup, training, and runner scripts
+│   ├── run_webcam_monitor.ps1    #   1-click webcam runner (with OpenVINO auto-detect)
+│   ├── run_viva_demo.ps1         #   Demo runner on YawDD video
+│   ├── download_distraction_dataset.py # Roboflow dataset downloader
+│   ├── train_yolo11_distraction.py     # YOLO11 distraction trainer
+│   ├── export_openvino_model.py  #   Intel OpenVINO export & benchmark tool
+│   ├── export_jetson_tensorrt.py #   NVIDIA Jetson TensorRT export script
 │   ├── setup_environment.ps1     #   Windows bootstrap
 │   ├── setup.sh                  #   macOS / Linux bootstrap
 │   ├── setup_environment.py      #   Cross-platform setup logic
 │   └── verify_environment.py     #   Environment validator
 ├── tests/
-│   ├── unit/                     #   17 unit tests
+│   ├── unit/                     #   37 unit tests (100% pass)
 │   └── integration/              #   Integration tests (planned)
-├── notebooks/                    # Jupyter notebooks for experiments
-├── docs/                         # Setup guides and architecture decisions
+├── notebooks/
+│   └── train_yolo11_distraction_colab.ipynb # 1-Click Colab training notebook
+├── docs/                         # Guides and architecture documentation
+│   ├── datasets.md               #   Dataset registry (YawDD, NTHU, Roboflow, State Farm)
+│   └── vehicle_deployment.md     #   In-vehicle edge hardware deployment (Jetson/TensorRT)
 ├── .github/workflows/ci.yml      # GitHub Actions CI (multi-OS, multi-Python)
 ├── pyproject.toml                # Project metadata and tool config
 ├── requirements.in               # Direct dependencies
