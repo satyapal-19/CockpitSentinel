@@ -1,0 +1,29 @@
+services:
+  cockpit-sentinel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cockpit-sentinel:latest
+    container_name: cockpit-sentinel-dashboard
+    restart: unless-stopped
+    ports:
+      - "${DASHBOARD_PORT:-8000}:8000"
+    environment:
+      - DASHBOARD_PORT=8000
+      - DATABASE_BACKEND=${DATABASE_BACKEND:-auto}
+      - MONGODB_URI=${MONGODB_URI:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      # Persistent local SQLite fallback & logs if MongoDB Atlas is unreachable
+      - cockpit-data:/app/data
+      - cockpit-logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  cockpit-data:
+  cockpit-logs:

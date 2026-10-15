@@ -1,0 +1,39 @@
+# Git & system
+.git
+.gitignore
+.gitattributes
+.github
+.vscode
+.idea
+
+# Python caches and virtual environments
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+env
+*.egg-info
+build/
+dist/
+
+# Tests & Coverage
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov/
+
+# Heavy datasets and local caches
+data/
+datasets/
+models/pretrained/
+runs/
+experiments/
+logs/
+scratch/
+
+# Local sensitive environment variables
+.env
+*.pem
+*.key

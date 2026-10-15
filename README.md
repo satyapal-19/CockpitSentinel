@@ -392,9 +392,12 @@ CockpitSentinel/
 │   ├── train_yolo11_distraction_colab.ipynb # Base Colab training notebook
 │   └── train_combined_phone_smoking_colab.ipynb # Balanced phone & smoking Colab notebook
 ├── docs/                         # Guides and architecture documentation
+│   ├── cloud_deployment_guide.md #   AWS and cloud provider deployment, CI/CD & telemetry guide
 │   ├── colab_training_guide.md   #   Google Colab training, dataset fusion & metrics guide
 │   ├── datasets.md               #   Dataset registry (YawDD, NTHU, Roboflow, State Farm)
 │   └── vehicle_deployment.md     #   In-vehicle edge hardware deployment (Jetson/TensorRT)
+├── Dockerfile                    # Production cloud and dashboard container
+├── docker-compose.yml            # Local and cloud 1-click Docker orchestration
 ├── .github/workflows/ci.yml      # GitHub Actions CI (multi-OS, multi-Python)
 ├── pyproject.toml                # Project metadata and tool config
 ├── requirements.in               # Direct dependencies
