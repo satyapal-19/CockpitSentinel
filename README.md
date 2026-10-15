@@ -289,9 +289,29 @@ CockpitSentinel employs a custom **YOLO11s** unified distraction detection model
 | **Merged Corpus $mAP@50-95$** | 45.86% | **53.09%** | **+7.23% overall accuracy** |
 | **Intel CPU Latency (OpenVINO FP16)** | 44.0 ms | **30.6 ms** | **32.6 FPS (11.2× speedup)** |
 
-- Complete Colab workflow & dataset remapping: [`docs/colab_training_guide.md`](docs/colab_training_guide.md)
-- Turnkey training notebook: [`notebooks/train_combined_phone_smoking_colab.ipynb`](notebooks/train_combined_phone_smoking_colab.ipynb)
-- Out-of-domain State Farm benchmark script: [`scripts/benchmark_state_farm_phone.py`](scripts/benchmark_state_farm_phone.py)
+### Standard Dataset Benchmarks & PDF Test Reports
+
+CockpitSentinel models and algorithms have been rigorously evaluated across **5 standard public benchmarks**:
+
+| Benchmark Dataset | Evaluation Scope | Key Metric & Result | Findings |
+| :--- | :--- | :---: | :--- |
+| **YawDD** (Yawning Detection) | 10 driver video sessions | **100% Accuracy / Recall / Precision** | Perfect MAR separation between normal ($0.015$), talking ($0.148$), and yawning ($0.95$–$1.09$). Distraction false-alarm rejection: **93.8% Specificity**. |
+| **Kaggle NTHU DDD** | 250 evaluation frames | **86.0% Nodding Accuracy** | MediaPipe EAR reliably detects microsleeps (mean EAR $0.151$). YOLO distraction false alarm rejection: **99.2% Specificity**. |
+| **Kaggle State Farm DDD** | 1,065 real-cabin images | **99.70% Phone Recall** | Detected cell phone in **331 of 332** phone interaction images ($0.715$ mean confidence). |
+| **Roboflow Distraction Corpus** | 2,757 annotations | **90.78% mAP@50 / 96.89% Smoking** | Baseline v1 model: $91.35\%$ precision, $85.91\%$ recall, $88.55\%$ F1-score. |
+| **Intel OpenVINO Edge Benchmark** | 640×640 on Core i5 | **22.7 – 32.6 FPS (30.6 ms)** | Full real-time edge vehicular deployment feasibility. |
+
+All comprehensive technical reports are compiled as standalone, publication-quality PDF documents located in [`test_reports/`](test_reports/):
+
+- [`01_Smoking_Detection_Colab_Training_Report.pdf`](test_reports/01_Smoking_Detection_Colab_Training_Report.pdf) — Colab T4 training setup, loss curves, and OpenVINO quantization.
+- [`02_Distraction_Model_Ablation_and_Accuracy_Report.pdf`](test_reports/02_Distraction_Model_Ablation_and_Accuracy_Report.pdf) — Head-to-head v1 vs. v2 ablation study, precision gains, and domain shift analysis.
+- [`03_YawDD_and_Kaggle_External_Benchmarks_Report.pdf`](test_reports/03_YawDD_and_Kaggle_External_Benchmarks_Report.pdf) — Video session results on YawDD, NTHU drowsy blinks, and State Farm phone sensitivity.
+- [`CockpitSentinel_Master_Model_Evaluation_Report.pdf`](test_reports/CockpitSentinel_Master_Model_Evaluation_Report.pdf) — Master technical evaluation synthesizing all 5 datasets and vehicle edge deployments.
+
+To regenerate the PDF reports at any time:
+```powershell
+python scripts/generate_pdf_reports.py
+```
 
 ---
 
@@ -309,6 +329,11 @@ CockpitSentinel/
 ├── models/                # Model weights (git-ignored)
 │   ├── pretrained/        #   YOLOv8, YOLOWorld, Face Landmarker
 │   └── trained/           #   Project-specific trained models
+├── test_reports/          # Generated PDF evaluation reports
+│   ├── 01_Smoking_Detection_Colab_Training_Report.pdf
+│   ├── 02_Distraction_Model_Ablation_and_Accuracy_Report.pdf
+│   ├── 03_YawDD_and_Kaggle_External_Benchmarks_Report.pdf
+│   └── CockpitSentinel_Master_Model_Evaluation_Report.pdf
 └── experiments/           # MLflow tracking (git-ignored)
     └── mlruns/
 ```
@@ -341,17 +366,25 @@ CockpitSentinel/
 │   ├── run_dashboard.ps1         #   1-click telemetry dashboard launcher (port 8000)
 │   ├── run_webcam_monitor.ps1    #   1-click webcam runner (with OpenVINO auto-detect)
 │   ├── run_viva_demo.ps1         #   Demo runner on YawDD video
+│   ├── evaluate_yawdd.py         #   YawDD multi-video benchmark evaluator
+│   ├── evaluate_kaggle_nthu.py   #   Kaggle NTHU drowsiness evaluator
 │   ├── benchmark_state_farm_phone.py # Out-of-domain State Farm evaluation benchmark
 │   ├── evaluate_distraction_model.py # Distraction validation evaluator
 │   ├── merge_phone_smoking_datasets.py # Balanced dataset merger & canonical label remapper
 │   ├── download_distraction_dataset.py # Roboflow dataset downloader
 │   ├── train_yolo11_distraction.py     # YOLO11 distraction trainer
+│   ├── generate_pdf_reports.py   #   Publication-quality PDF report generator
 │   ├── export_openvino_model.py  #   Intel OpenVINO export & benchmark tool
 │   ├── export_jetson_tensorrt.py #   NVIDIA Jetson TensorRT export script
 │   ├── setup_environment.ps1     #   Windows bootstrap
 │   ├── setup.sh                  #   macOS / Linux bootstrap
 │   ├── setup_environment.py      #   Cross-platform setup logic
 │   └── verify_environment.py     #   Environment validator
+├── test_reports/                 # Compiled PDF test & benchmark reports
+│   ├── 01_Smoking_Detection_Colab_Training_Report.pdf
+│   ├── 02_Distraction_Model_Ablation_and_Accuracy_Report.pdf
+│   ├── 03_YawDD_and_Kaggle_External_Benchmarks_Report.pdf
+│   └── CockpitSentinel_Master_Model_Evaluation_Report.pdf
 ├── tests/
 │   ├── unit/                     #   61 unit tests (100% pass)
 │   └── integration/              #   Integration tests (planned)
