@@ -150,9 +150,10 @@ kaggle competitions download -c state-farm-distracted-driver-detection `
 
 ## 5. Driver Distraction Dataset (Phone & Smoking - YOLO Format)
 
-**Source:** [Roboflow Universe - Driver Distraction](https://universe.roboflow.com/1539379769-qq-com/driver-smoking-phoneuse-earphone-detection-9nlii)
-**Type:** Bounding box object detection formatted for YOLO11 / YOLOv8
-**Target Classes:** `smoke`, `using_phone`, `earphone`, `without_using_phone`
+**Base Source:** [Roboflow Universe - Driver Distraction](https://universe.roboflow.com/satyapal-gaikwad/driver-smoking-phoneuse-earphone-detection-9nlii-oscoe/1)
+**Type:** Bounding box object detection formatted for YOLO11
+**Volume:** 1,253 annotated in-cabin driver images (1,052 train / 201 val)
+**Target Classes:** `earphone`, `person`, `smoke`, `using_phone`
 
 ### Automated Download
 ```powershell
@@ -160,22 +161,25 @@ kaggle competitions download -c state-farm-distracted-driver-detection `
 python scripts/download_distraction_dataset.py --api-key YOUR_API_KEY
 ```
 
-### Folder Structure
-```text
-distraction_phone_smoking/
-├── data.yaml           <- YOLO dataset configuration
-├── train/
-│   ├── images/         <- Train JPEG/PNG frames
-│   └── labels/         <- YOLO format TXT bounding boxes
-├── valid/
-│   ├── images/
-│   └── labels/
-└── test/
-    ├── images/
-    └── labels/
+---
+
+## 6. Dedicated Driver Phone & Merged Distraction Super-Dataset
+
+**Phone Dataset Source:** [Roboflow Universe - Using Phone While Driving](https://universe.roboflow.com/long-itwjh/using-phone-while-driving-qcvye/2)
+**Volume:** 886 in-cabin images with 2,757 phone bounding box annotations
+**Merged Path:** `data/processed/merged_phone_smoking/`
+**Purpose:** Eliminates false-positives on steering wheel hold & hand gestures, pushing phone detection precision to **95.05%**.
+
+### Merge Script
+```powershell
+python scripts/merge_phone_smoking_datasets.py `
+  --base-dir data/external/distraction_phone_smoking `
+  --phone-dir data/external/phone_dataset `
+  --output-dir data/processed/merged_phone_smoking
 ```
 
 ---
+
 
 ## Full Storage Layout
 

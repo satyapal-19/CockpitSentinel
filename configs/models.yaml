@@ -22,3 +22,10 @@ trained:
     source: ultralytics-yolo11
     purpose: unified phone and smoking distraction detection
 
+  yolo11s_balanced_distraction:
+    path: "{models_root}/trained/yolo11s_balanced_distraction/best.pt"
+    openvino_path: "{models_root}/trained/yolo11s_balanced_distraction/best_openvino_model"
+    onnx_path: "{models_root}/trained/yolo11s_balanced_distraction/best.onnx"
+    source: ultralytics-yolo11
+    purpose: high-precision balanced phone and smoking distraction detection
+
