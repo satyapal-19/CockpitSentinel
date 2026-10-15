@@ -47,13 +47,24 @@ def evaluate_distraction_model(
         plots=False,
     )
 
-    names = model.names
+    present_indices = [i for i in range(len(model.names)) if i in metrics.box.ap_class_index] if hasattr(metrics.box, 'ap_class_index') else list(range(len(metrics.box.p)))
+    
     class_metrics = {}
-    for idx, class_name in names.items():
-        if idx < len(metrics.box.maps):
-            class_metrics[class_name] = {
-                "mAP50_95": float(metrics.box.maps[idx]),
-            }
+    for list_idx, cls_id in enumerate(metrics.box.ap_class_index if hasattr(metrics.box, 'ap_class_index') else range(len(metrics.box.p))):
+        c_name = model.names.get(int(cls_id), f"class_{cls_id}")
+        p = float(metrics.box.p[list_idx]) if list_idx < len(metrics.box.p) else 0.0
+        r = float(metrics.box.r[list_idx]) if list_idx < len(metrics.box.r) else 0.0
+        f1 = float(metrics.box.f1[list_idx]) if hasattr(metrics.box, 'f1') and list_idx < len(metrics.box.f1) else (2 * p * r / (p + r + 1e-16))
+        ap50 = float(metrics.box.ap50[list_idx]) if list_idx < len(metrics.box.ap50) else 0.0
+        ap = float(metrics.box.ap[list_idx]) if list_idx < len(metrics.box.ap) else 0.0
+
+        class_metrics[c_name] = {
+            "precision": p,
+            "recall": r,
+            "f1_score": f1,
+            "mAP50": ap50,
+            "mAP50_95": ap,
+        }
 
     overall_metrics = {
         "model_path": str(weights_path),
@@ -75,28 +86,36 @@ def evaluate_distraction_model(
         "per_class": class_metrics,
     }
 
-    print("\n" + "=" * 65)
-    print("      COCKPITSENTINEL YOLO11 DISTRACTION MODEL ACCURACY REPORT")
-    print("=" * 65)
+    print("\n" + "=" * 85)
+    print("      COCKPITSENTINEL YOLO11 DISTRACTION MODEL ACCURACY & PERFORMANCE REPORT")
+    print("=" * 85)
     print(f"Overall Precision (P) : {overall_metrics['precision']*100:.2f}%")
     print(f"Overall Recall (R)    : {overall_metrics['recall']*100:.2f}%")
     print(f"Overall F1-Score      : {overall_metrics['f1_score']*100:.2f}%")
     print(f"Overall mAP@50        : {overall_metrics['mAP50']*100:.2f}%")
     print(f"Overall mAP@50-95     : {overall_metrics['mAP50_95']*100:.2f}%")
-    print("-" * 65)
-    print(f"{'Class Name':<20} {'mAP@50-95':<15}")
-    print("-" * 65)
+    print("-" * 85)
+    print(f"{'Class Name':<16} {'Precision':<12} {'Recall':<12} {'F1-Score':<12} {'mAP@50':<12} {'mAP@50-95':<12}")
+    print("-" * 85)
     for c_name, data in class_metrics.items():
-        print(f"{c_name:<20} {data['mAP50_95']*100:>8.2f}%")
-    print("=" * 65 + "\n")
+        print(
+            f"{c_name:<16} "
+            f"{data['precision']*100:>9.2f}%  "
+            f"{data['recall']*100:>9.2f}%  "
+            f"{data['f1_score']*100:>9.2f}%  "
+            f"{data['mAP50']*100:>9.2f}%  "
+            f"{data['mAP50_95']*100:>9.2f}%"
+        )
+    print("=" * 85 + "\n")
 
     if save_json:
         reports_dir = REPO_ROOT / "experiments"
         reports_dir.mkdir(parents=True, exist_ok=True)
-        report_file = reports_dir / "distraction_model_accuracy_report.json"
+        report_file = reports_dir / f"{weights_path.parent.name}_accuracy_report.json"
         with open(report_file, "w", encoding="utf-8") as f:
             json.dump(overall_metrics, f, indent=2)
         print(f"[OK] Report saved to: {report_file}")
+
 
     return overall_metrics
 
