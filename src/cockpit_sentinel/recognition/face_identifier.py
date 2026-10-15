@@ -21,7 +21,7 @@ class FaceIdentifier:
     def __init__(
         self,
         device: str | None = None,
-        similarity_threshold: float = 0.60,
+        similarity_threshold: float = 0.65,
     ) -> None:
         self.device = (
             device
@@ -81,7 +81,7 @@ class FaceIdentifier:
         except Exception as exc:
             logger.debug("MTCNN detection exception: %s", exc)
 
-        # 2. Secondary Fallback: OpenCV Haar Cascade
+        # 2. Secondary Fallback: OpenCV Haar Cascade + aligned crop
         if self._haar_cascade is not None:
             try:
                 gray = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2GRAY)
@@ -89,11 +89,33 @@ class FaceIdentifier:
                     gray, scaleFactor=1.1, minNeighbors=4, minSize=(60, 60)
                 )
                 if len(faces) > 0:
-                    # Pick largest face
                     x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+                    # Add 25% margin around Haar box and try MTCNN alignment on crop
+                    pad_x = int(w * 0.25)
+                    pad_y = int(h * 0.25)
+                    y1 = max(0, y - pad_y)
+                    y2 = min(rgb_image.shape[0], y + h + pad_y)
+                    x1 = max(0, x - pad_x)
+                    x2 = min(rgb_image.shape[1], x + w + pad_x)
+                    face_crop = rgb_image[y1:y2, x1:x2]
+
+                    try:
+                        face_tensor = self._mtcnn(face_crop)
+                        if face_tensor is not None:
+                            if len(face_tensor.shape) == 3:
+                                face_tensor = face_tensor.unsqueeze(0)
+                            face_tensor = face_tensor.to(self.device)
+                            with torch.no_grad():
+                                embedding = self._model(face_tensor).cpu().numpy().flatten()
+                            norm = np.linalg.norm(embedding)
+                            if norm > 1e-6:
+                                return embedding / norm
+                    except Exception:
+                        pass
+
+                    # Fallback to direct resize if MTCNN on crop also failed
                     crop = rgb_image[y : y + h, x : x + w]
                     resized = cv2.resize(crop, (160, 160))
-                    # Preprocess for InceptionResnetV1: (img - 127.5) / 128.0, transpose to (1, 3, 160, 160)
                     tensor = (
                         torch.from_numpy(resized)
                         .permute(2, 0, 1)

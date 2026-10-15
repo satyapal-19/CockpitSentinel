@@ -167,3 +167,60 @@ def test_live_monitor_with_temporal_window_and_dashboard_boxes():
     # Image rendered with overlay
     assert frame_critical.image.shape == frame.shape
     assert np.any(frame_critical.image != frame)
+
+
+def test_live_monitor_driver_verification_states_and_overlay():
+    frame = np.zeros((300, 400, 3), dtype=np.uint8)
+    monitor = LiveMonitor(
+        StubDetector(),
+        DEFAULT_POLICY,
+        driver_name="Satyapal Gaikwad",
+        face_verified=False,
+        verification_status="scanning",
+    )
+
+    # Initial state: scanning
+    assert monitor.verification_status == "scanning"
+    assert not monitor.face_verified
+    proc = monitor.process(frame)
+    assert proc.image is not None
+
+    # Biometric verified state
+    from cockpit_sentinel.database.models import DriverProfile, DriverThresholds
+
+    driver = DriverProfile(
+        id="drv-test-01",
+        name="Satyapal Gaikwad",
+        license_number="MH-12-2024",
+        thresholds=DriverThresholds(eye_aspect_ratio_threshold=0.25),
+    )
+    monitor.set_driver_verified(driver, confidence=0.88)
+    assert monitor.verification_status == "verified"
+    assert monitor.face_verified
+    assert monitor.driver_name == "Satyapal Gaikwad"
+    assert monitor.match_confidence == 0.88
+    proc_verified = monitor.process(frame)
+    assert proc_verified.image is not None
+
+    # Mismatch state (different person in cabin when expected driver assigned)
+    monitor.set_driver_mismatch(expected_name="Satyapal Gaikwad", best_score=0.18)
+    assert monitor.verification_status == "mismatch"
+    assert not monitor.face_verified
+    assert monitor.driver_name == "Satyapal Gaikwad"
+    assert monitor.match_confidence == 0.18
+    proc_mismatch = monitor.process(frame)
+    assert proc_mismatch.image is not None
+
+    # Unrecognized guest driver state
+    monitor.set_driver_unrecognized(best_score=0.10)
+    assert monitor.verification_status == "unrecognized"
+    assert not monitor.face_verified
+    assert monitor.driver_name is None
+    proc_unrec = monitor.process(frame)
+    assert proc_unrec.image is not None
+
+    # Scanning / empty cabin state
+    monitor.set_driver_scanning()
+    assert monitor.verification_status == "scanning"
+    assert not monitor.face_verified
+

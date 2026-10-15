@@ -239,12 +239,16 @@ class LiveMonitor:
         signal_thresholds: Mapping[str, float] | None = None,
         driver_name: str | None = None,
         face_verified: bool = False,
+        verification_status: str = "scanning",
+        match_confidence: float = 0.0,
     ) -> None:
         self._detector = detector
         self._policy = policy
         self._distraction_detector = distraction_detector
         self.driver_name = driver_name
         self.face_verified = face_verified
+        self.verification_status = verification_status
+        self.match_confidence = match_confidence
 
         if time_window_seconds is not None:
             self._time_window_seconds = max(0.0, time_window_seconds)
@@ -262,10 +266,60 @@ class LiveMonitor:
         """Access the underlying trip tracker."""
         return self._trip_tracker
 
+    def set_driver_verified(self, driver: Any, confidence: float) -> None:
+        """Mark the active driver as biometrically verified."""
+        self.driver_name = getattr(driver, "name", str(driver))
+        self.face_verified = True
+        self.verification_status = "verified"
+        self.match_confidence = confidence
+
+    def set_driver_unrecognized(self, best_score: float = 0.0) -> None:
+        """Mark person in cabin as an unrecognized driver (guest mode)."""
+        self.driver_name = None
+        self.face_verified = False
+        self.verification_status = "unrecognized"
+        self.match_confidence = best_score
+
+    def set_driver_mismatch(self, expected_name: str, best_score: float = 0.0) -> None:
+        """Mark that an unrecognized person is driving instead of the expected assigned driver."""
+        self.driver_name = expected_name
+        self.face_verified = False
+        self.verification_status = "mismatch"
+        self.match_confidence = best_score
+
+    def set_driver_scanning(self) -> None:
+        """No face or scanning state."""
+        self.face_verified = False
+        self.verification_status = "scanning"
+        self.match_confidence = 0.0
+
+    def restore_defaults(
+        self,
+        default_drowsiness_config: Any,
+        default_distraction_config: Any,
+        default_policy: AlertPolicy,
+        default_time_window: float,
+    ) -> None:
+        """Revert detector and policy back to default safe baseline thresholds."""
+        if hasattr(self._detector, "config") and default_drowsiness_config is not None:
+            self._detector.config = default_drowsiness_config
+        if (
+            self._distraction_detector is not None
+            and default_distraction_config is not None
+            and hasattr(self._distraction_detector, "config")
+        ):
+            self._distraction_detector.config = default_distraction_config
+        self._policy = default_policy
+        self._time_window_seconds = default_time_window
+        self._temporal_stabilizer = TemporalSignalStabilizer(
+            window_seconds=self._time_window_seconds
+        )
+
     def apply_driver_profile(self, driver: Any) -> None:
         """Dynamically adapt detector, policy thresholds, and verified driver status."""
         self.driver_name = getattr(driver, "name", None)
         self.face_verified = True
+        self.verification_status = "verified"
         t = getattr(driver, "thresholds", None)
         if not t:
             return
@@ -332,6 +386,8 @@ class LiveMonitor:
             active_durations=active_durations,
             driver_name=self.driver_name,
             face_verified=self.face_verified,
+            verification_status=self.verification_status,
+            match_confidence=self.match_confidence,
         )
         return MonitorFrame(
             analysis=analysis,
@@ -364,6 +420,8 @@ def draw_monitor_overlay(
     active_durations: Mapping[str, float] | None = None,
     driver_name: str | None = None,
     face_verified: bool = False,
+    verification_status: str = "scanning",
+    match_confidence: float = 0.0,
 ) -> np.ndarray:
     """Draw readable dashboard status, telemetry, trip timer, and bounding boxes."""
 
@@ -439,30 +497,37 @@ def draw_monitor_overlay(
         cv2.LINE_AA,
     )
 
-    if driver_name:
-        drv_tag = f"DRIVER: {driver_name.upper()}" + (" [ID VERIFIED]" if face_verified else "")
-        drv_color = (80, 230, 150) if face_verified else (200, 200, 200)
-        cv2.putText(
-            image,
-            drv_tag,
-            (14, 70),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.44,
-            drv_color,
-            1,
-            cv2.LINE_AA,
-        )
-    elif face_verified is False:
-        cv2.putText(
-            image,
-            "CABIN: SCANNING DRIVER...",
-            (14, 70),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.42,
-            (150, 150, 150),
-            1,
-            cv2.LINE_AA,
-        )
+    # Line 70: Driver Verification Status Badge
+    if verification_status == "verified" and driver_name:
+        conf_int = int(round(match_confidence * 100))
+        drv_tag = f"DRIVER: {driver_name.upper()} [VERIFIED {conf_int}%]"
+        drv_color = (80, 240, 140)  # Bright emerald green
+    elif verification_status == "mismatch":
+        expected_txt = f" (EXP: {driver_name.upper()})" if driver_name else ""
+        drv_tag = f"CABIN ALERT: UNVERIFIED DRIVER{expected_txt}"
+        drv_color = (49, 69, 220)  # Alert Red
+    elif verification_status == "unrecognized":
+        conf_int = int(round(match_confidence * 100))
+        conf_txt = f" ({conf_int}% MATCH)" if conf_int > 0 else ""
+        drv_tag = f"DRIVER: UNRECOGNIZED PERSON{conf_txt} [GUEST MODE]"
+        drv_color = (33, 180, 241)  # Warning Amber
+    elif analysis.face_detected:
+        drv_tag = "CABIN: SCANNING BIOMETRICS..."
+        drv_color = (180, 180, 180)
+    else:
+        drv_tag = "CABIN: NO DRIVER DETECTED"
+        drv_color = (130, 130, 130)
+
+    cv2.putText(
+        image,
+        drv_tag,
+        (14, 70),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.44,
+        drv_color,
+        1,
+        cv2.LINE_AA,
+    )
 
     # Right side: Trip Time, Attention %, FPS
     if trip_stats is not None:
@@ -557,7 +622,8 @@ def run_live_monitor(
     driver_id: str | None = None,
     route_id: str | None = None,
     auto_identify: bool = True,
-    face_check_interval: int = 25,
+    face_check_interval: int = 20,
+    face_threshold: float = 0.65,
 ) -> None:
     """Open a webcam or video file and show processed frames until Q or Esc is pressed."""
 
@@ -566,12 +632,21 @@ def run_live_monitor(
         raise RuntimeError(f"Could not open video source: {source}")
 
     db = None
+    expected_driver = None
     driver_profile = None
+    active_driver_id = None
     route_obj = None
     session_alerts_count = 0
     last_alert_time = 0.0
     trip_id = f"trp-{int(time.time())}"
     trip_start_iso = datetime.now(timezone.utc).isoformat()
+
+    default_drowsiness_config = getattr(detector, "config", None)
+    default_distraction_config = (
+        getattr(distraction_detector, "config", None) if distraction_detector else None
+    )
+    default_policy = policy
+    default_time_window = time_window_seconds
 
     try:
         from cockpit_sentinel.database.client import get_db_manager
@@ -584,9 +659,9 @@ def run_live_monitor(
 
     if db and driver_id:
         try:
-            driver_profile = db.get_driver(driver_id)
+            expected_driver = db.get_driver(driver_id)
         except Exception:
-            driver_profile = None
+            expected_driver = None
 
     if db and route_id:
         try:
@@ -615,19 +690,42 @@ def run_live_monitor(
         except Exception as exc:
             print(f"[FACE ID NOTICE] In-cabin biometric identification unavailable: {exc}")
 
+    # Set initial driver state:
+    # If auto_identify is True, require camera face verification (do not assume driver_id is verified)
+    if not auto_identify and expected_driver:
+        # Manual override mode: trust specified driver profile without camera biometric check
+        driver_profile = expected_driver
+        active_driver_id = expected_driver.id
+        initial_status = "verified"
+        initial_verified = True
+        initial_driver_name = expected_driver.name
+    elif expected_driver:
+        # Expected driver provided, but biometric verification pending
+        initial_status = "scanning"
+        initial_verified = False
+        initial_driver_name = expected_driver.name
+    else:
+        # No driver specified, biometric scanning mode
+        initial_status = "scanning"
+        initial_verified = False
+        initial_driver_name = None
+
     monitor = LiveMonitor(
         detector,
         policy,
         distraction_detector,
         time_window_seconds=time_window_seconds,
-        driver_name=driver_profile.name if driver_profile else None,
-        face_verified=bool(driver_profile),
+        driver_name=initial_driver_name,
+        face_verified=initial_verified,
+        verification_status=initial_status,
     )
 
-    if driver_profile:
+    if not auto_identify and driver_profile:
         monitor.apply_driver_profile(driver_profile)
 
     frame_counter = 0
+    no_face_frames = 0
+    consecutive_mismatches = 0
 
     try:
         while True:
@@ -637,39 +735,78 @@ def run_live_monitor(
 
             frame_counter += 1
 
-            # Auto-identify driver entering cabin if not yet identified
+            # Biometric cabin face verification (periodic check + quick checks on startup)
             if (
                 auto_identify
                 and face_identifier is not None
                 and enrolled_drivers
-                and driver_profile is None
-                and (frame_counter % face_check_interval == 0 or frame_counter == 5)
+                and (frame_counter % face_check_interval == 0 or frame_counter in (3, 6))
             ):
                 matched, score = face_identifier.identify_driver(
-                    frame, enrolled_drivers, threshold=0.55
+                    frame, enrolled_drivers, threshold=face_threshold
                 )
-                if matched:
-                    driver_profile = matched
-                    monitor.apply_driver_profile(matched)
-                    print("\n" + "=" * 64)
-                    print(f" CABIN ACCESS GRANTED: BIOMETRIC FACE VERIFIED!")
-                    print(f" Driver: {matched.name} ({matched.license_number})")
-                    print(f" Match Confidence: {int(score * 100)}% (threshold >= 55%)")
-                    print(
-                        f" Applied Personalized Thresholds: EAR={matched.thresholds.eye_aspect_ratio_threshold}, "
-                        f"MAR={matched.thresholds.mouth_aspect_ratio_threshold}, "
-                        f"Yaw={matched.thresholds.head_yaw_threshold_degrees} deg, "
-                        f"Window={matched.thresholds.time_window_seconds}s"
-                    )
-                    print("=" * 64 + "\n")
+                if matched is not None:
+                    consecutive_mismatches = 0
+                    monitor.set_driver_verified(matched, score)
+                    if active_driver_id != matched.id:
+                        active_driver_id = matched.id
+                        driver_profile = matched
+                        monitor.apply_driver_profile(matched)
+                        print("\n" + "=" * 64)
+                        print(" CABIN ACCESS GRANTED: BIOMETRIC FACE VERIFIED!")
+                        print(f" Driver: {matched.name} ({matched.license_number})")
+                        print(f" Match Confidence: {int(score * 100)}% (threshold >= {int(face_threshold * 100)}%)")
+                        print(
+                            f" Applied Personalized Thresholds: EAR={matched.thresholds.eye_aspect_ratio_threshold}, "
+                            f"MAR={matched.thresholds.mouth_aspect_ratio_threshold}, "
+                            f"Yaw={matched.thresholds.head_yaw_threshold_degrees} deg, "
+                            f"Window={matched.thresholds.time_window_seconds}s"
+                        )
+                        print("=" * 64 + "\n")
+                else:
+                    consecutive_mismatches += 1
+                    if score > 0.0 or consecutive_mismatches >= 2:
+                        if expected_driver is not None:
+                            monitor.set_driver_mismatch(expected_driver.name, score)
+                        else:
+                            monitor.set_driver_unrecognized(score)
+                        if active_driver_id is not None:
+                            active_driver_id = None
+                            driver_profile = None
+                            monitor.restore_defaults(
+                                default_drowsiness_config,
+                                default_distraction_config,
+                                default_policy,
+                                default_time_window,
+                            )
+                            print(
+                                f"[FACE ID] Driver face mismatch / unrecognized (score={score:.2f}). "
+                                "Reverting to default safe baseline thresholds."
+                            )
 
             processed = monitor.process(frame)
+
+            # Track face presence and reset verified state if seat is empty
+            if processed.analysis.face_detected:
+                no_face_frames = 0
+            else:
+                no_face_frames += 1
+                if no_face_frames >= 40:
+                    if active_driver_id is not None:
+                        active_driver_id = None
+                        driver_profile = None
+                        monitor.restore_defaults(
+                            default_drowsiness_config,
+                            default_distraction_config,
+                            default_policy,
+                            default_time_window,
+                        )
+                    monitor.set_driver_scanning()
 
             # Audit logging of WARNING/CRITICAL incidents
             now = time.monotonic()
             if (
                 db
-                and driver_profile
                 and processed.assessment.level in (RiskLevel.WARNING, RiskLevel.CRITICAL)
             ):
                 if now - last_alert_time >= 3.5:
@@ -694,10 +831,26 @@ def run_live_monitor(
                         dur = 1.0
                         if processed.active_durations:
                             dur = max(processed.active_durations.values()) or 1.0
+
+                        log_drv_id = (
+                            driver_profile.id
+                            if driver_profile
+                            else (expected_driver.id if expected_driver else "unverified-guest")
+                        )
+                        log_drv_name = (
+                            driver_profile.name
+                            if driver_profile
+                            else (
+                                f"UNVERIFIED (Exp: {expected_driver.name})"
+                                if expected_driver
+                                else "Guest Driver"
+                            )
+                        )
+
                         incident = AlertIncident(
                             trip_id=trip_id,
-                            driver_id=driver_profile.id,
-                            driver_name=driver_profile.name,
+                            driver_id=log_drv_id,
+                            driver_name=log_drv_name,
                             route_name=route_obj.route_name
                             if route_obj
                             else "Active Highway Corridor",
@@ -719,34 +872,49 @@ def run_live_monitor(
     finally:
         capture.release()
         cv2.destroyAllWindows()
-        if db and driver_profile:
+        if db:
             try:
                 stats = monitor.trip_tracker.current_stats
-                safety_rating = round(min(5.0, max(1.0, stats.attention_score / 20.0)), 2)
-                trip_session = TripSession(
-                    id=trip_id,
-                    driver_id=driver_profile.id,
-                    driver_name=driver_profile.name,
-                    route_id=route_obj.id if route_obj else None,
-                    route_name=route_obj.route_name if route_obj else "Direct Transit",
-                    start_time=trip_start_iso,
-                    end_time=datetime.now(timezone.utc).isoformat(),
-                    duration_seconds=round(stats.total_seconds, 1),
-                    attentive_seconds=round(stats.attentive_seconds, 1),
-                    inattentive_seconds=round(stats.inattentive_seconds, 1),
-                    attention_score=round(stats.attention_score, 1),
-                    total_frames=stats.total_frames,
-                    average_fps=round(stats.fps, 1),
-                    alert_count=session_alerts_count,
-                    safety_rating=safety_rating,
-                    status="completed",
-                )
-                db.save_trip(trip_session)
-                print("\n" + "=" * 62)
-                print(f" [DATABASE] Trip session saved for {driver_profile.name}")
-                print(f" Duration: {stats.formatted_trip_time} | Attentive: {stats.attention_score:.1f}%")
-                print(f" Alerts Logged: {session_alerts_count} | Trip Safety Rating: {safety_rating}/5.0")
-                print("=" * 62 + "\n")
+                if stats.total_frames > 0:
+                    safety_rating = round(min(5.0, max(1.0, stats.attention_score / 20.0)), 2)
+                    save_drv_id = (
+                        driver_profile.id
+                        if driver_profile
+                        else (expected_driver.id if expected_driver else "unverified-guest")
+                    )
+                    save_drv_name = (
+                        driver_profile.name
+                        if driver_profile
+                        else (
+                            f"UNVERIFIED (Exp: {expected_driver.name})"
+                            if expected_driver
+                            else "Guest Driver"
+                        )
+                    )
+                    trip_session = TripSession(
+                        id=trip_id,
+                        driver_id=save_drv_id,
+                        driver_name=save_drv_name,
+                        route_id=route_obj.id if route_obj else None,
+                        route_name=route_obj.route_name if route_obj else "Direct Transit",
+                        start_time=trip_start_iso,
+                        end_time=datetime.now(timezone.utc).isoformat(),
+                        duration_seconds=round(stats.total_seconds, 1),
+                        attentive_seconds=round(stats.attentive_seconds, 1),
+                        inattentive_seconds=round(stats.inattentive_seconds, 1),
+                        attention_score=round(stats.attention_score, 1),
+                        total_frames=stats.total_frames,
+                        average_fps=round(stats.fps, 1),
+                        alert_count=session_alerts_count,
+                        safety_rating=safety_rating,
+                        status="completed",
+                    )
+                    db.save_trip(trip_session)
+                    print("\n" + "=" * 62)
+                    print(f" [DATABASE] Trip session saved for {save_drv_name}")
+                    print(f" Duration: {stats.formatted_trip_time} | Attentive: {stats.attention_score:.1f}%")
+                    print(f" Alerts Logged: {session_alerts_count} | Trip Safety Rating: {safety_rating}/5.0")
+                    print("=" * 62 + "\n")
             except Exception as err:
                 print(f"[DATABASE WARNING] Could not persist trip session: {err}")
 
@@ -850,6 +1018,12 @@ def main() -> None:
         default=True,
         help="Automatically detect driver's face in cabin and apply their profile (default: True).",
     )
+    parser.add_argument(
+        "--face-threshold",
+        type=float,
+        default=0.65,
+        help="Biometric face identification cosine similarity threshold (default: 0.65).",
+    )
     args = parser.parse_args()
 
     model_path = args.model_path or resolve_model_path("face_landmarker.task", args.models_root)
@@ -913,32 +1087,40 @@ def main() -> None:
             db = get_db_manager()
             drv = db.get_driver(args.driver_id)
             if drv:
-                t = drv.thresholds
-                drowsiness_config = DrowsinessConfig(
-                    eye_aspect_ratio_threshold=t.eye_aspect_ratio_threshold,
-                    mouth_aspect_ratio_threshold=t.mouth_aspect_ratio_threshold,
-                    head_yaw_threshold_degrees=t.head_yaw_threshold_degrees,
-                    minimum_consecutive_frames=drowsiness_config.minimum_consecutive_frames,
-                )
-                distraction_config = DistractionConfig(
-                    phone_confidence_threshold=t.phone_confidence_threshold,
-                    smoking_confidence_threshold=t.smoking_confidence_threshold,
-                    smoking_labels=distraction_config.smoking_labels,
-                )
-                time_window_sec = t.time_window_seconds
-                alert_policy = AlertPolicy(
-                    weights=alert_policy.weights,
-                    caution_score=t.caution_score,
-                    warning_score=t.warning_score,
-                    critical_score=t.critical_score,
-                    time_window_seconds=t.time_window_seconds,
-                )
-                print("\n" + "=" * 62)
-                print(f" PROFILE LOADED: {drv.name} ({drv.license_number})")
-                print(f" Status: {drv.status.upper()} | Rating: {drv.rating}★ | Safety Score: {drv.safety_score}%")
-                print(f" Custom EAR: {t.eye_aspect_ratio_threshold} | MAR: {t.mouth_aspect_ratio_threshold} | Yaw: {t.head_yaw_threshold_degrees}°")
-                print(f" Phone Conf: {t.phone_confidence_threshold} | Smoking Conf: {t.smoking_confidence_threshold} | Window: {time_window_sec}s")
-                print("=" * 62 + "\n")
+                if not args.auto_identify:
+                    # In manual override mode (--no-auto-identify), apply driver custom thresholds immediately
+                    t = drv.thresholds
+                    drowsiness_config = DrowsinessConfig(
+                        eye_aspect_ratio_threshold=t.eye_aspect_ratio_threshold,
+                        mouth_aspect_ratio_threshold=t.mouth_aspect_ratio_threshold,
+                        head_yaw_threshold_degrees=t.head_yaw_threshold_degrees,
+                        minimum_consecutive_frames=drowsiness_config.minimum_consecutive_frames,
+                    )
+                    distraction_config = DistractionConfig(
+                        phone_confidence_threshold=t.phone_confidence_threshold,
+                        smoking_confidence_threshold=t.smoking_confidence_threshold,
+                        smoking_labels=distraction_config.smoking_labels,
+                    )
+                    time_window_sec = t.time_window_seconds
+                    alert_policy = AlertPolicy(
+                        weights=alert_policy.weights,
+                        caution_score=t.caution_score,
+                        warning_score=t.warning_score,
+                        critical_score=t.critical_score,
+                        time_window_seconds=t.time_window_seconds,
+                    )
+                    print("\n" + "=" * 62)
+                    print(f" PROFILE LOADED (MANUAL OVERRIDE): {drv.name} ({drv.license_number})")
+                    print(f" Status: {drv.status.upper()} | Rating: {drv.rating}★ | Safety Score: {drv.safety_score}%")
+                    print(f" Custom EAR: {t.eye_aspect_ratio_threshold} | MAR: {t.mouth_aspect_ratio_threshold} | Yaw: {t.head_yaw_threshold_degrees}°")
+                    print(f" Phone Conf: {t.phone_confidence_threshold} | Smoking Conf: {t.smoking_confidence_threshold} | Window: {time_window_sec}s")
+                    print("=" * 62 + "\n")
+                else:
+                    print("\n" + "=" * 62)
+                    print(f" EXPECTED DRIVER: {drv.name} ({drv.license_number})")
+                    print(f" Status: {drv.status.upper()} | Rating: {drv.rating}★ | Safety Score: {drv.safety_score}%")
+                    print(" Biometric cabin verification active — scanning camera face...")
+                    print("=" * 62 + "\n")
             else:
                 print(f"[WARNING] Driver ID '{args.driver_id}' not found in database. Using defaults.")
         except Exception as exc:
@@ -971,6 +1153,7 @@ def main() -> None:
                 driver_id=args.driver_id,
                 route_id=args.route_id,
                 auto_identify=args.auto_identify,
+                face_threshold=args.face_threshold,
             )
     except KeyboardInterrupt:
         print("\nMonitor interrupted by user. Exiting cleanly.")
