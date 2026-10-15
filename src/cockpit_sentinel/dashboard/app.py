@@ -25,6 +25,7 @@ from cockpit_sentinel.database.models import (
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 INDEX_HTML_PATH = TEMPLATES_DIR / "index.html"
+MONITOR_HTML_PATH = TEMPLATES_DIR / "monitor.html"
 
 app = FastAPI(
     title="CockpitSentinel Fleet & Driver Management Dashboard",
@@ -115,6 +116,19 @@ async def serve_dashboard() -> HTMLResponse:
             detail="Dashboard index.html template not found on disk.",
         )
     content = INDEX_HTML_PATH.read_text(encoding="utf-8")
+    return HTMLResponse(content=content)
+
+
+@app.get("/monitor", response_class=HTMLResponse)
+@app.get("/live", response_class=HTMLResponse)
+async def serve_monitor() -> HTMLResponse:
+    """Serve the standalone in-cabin live camera monitor HUD."""
+    if not MONITOR_HTML_PATH.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Monitor template monitor.html not found on disk.",
+        )
+    content = MONITOR_HTML_PATH.read_text(encoding="utf-8")
     return HTMLResponse(content=content)
 
 

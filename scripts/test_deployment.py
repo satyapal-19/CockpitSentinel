@@ -69,7 +69,7 @@ def run_tests(base_url: str) -> bool:
     # -------------------------------------------------------------------------
     # TEST 1: Root UI & Dashboard Template
     # -------------------------------------------------------------------------
-    print("[TEST 1/6] Checking Dashboard HTML Web UI (/)...", end=" ")
+    print("[TEST 1/7] Checking Dashboard HTML Web UI (/)...", end=" ")
     code, body, lat = make_request(f"{base}/")
     if code == 200 and ("CockpitSentinel" in str(body) or "<!DOCTYPE html>" in str(body)):
         print(f"PASS (200 OK, {lat:.1f}ms)")
@@ -77,10 +77,18 @@ def run_tests(base_url: str) -> bool:
         print(f"FAIL (Code {code}, {body})")
         all_passed = False
 
+    print("[TEST 2/7] Checking Standalone In-Cabin Live Monitor (/monitor)...", end=" ")
+    code, body, lat = make_request(f"{base}/monitor")
+    if code == 200 and "Universal In-Cabin Live Monitor" in str(body):
+        print(f"PASS (200 OK, {lat:.1f}ms)")
+    else:
+        print(f"FAIL (Code {code}, {body})")
+        all_passed = False
+
     # -------------------------------------------------------------------------
-    # TEST 2: Healthcheck & Database Backend Info (/api/status)
+    # TEST 3: Healthcheck & Database Backend Info (/api/status)
     # -------------------------------------------------------------------------
-    print("[TEST 2/6] Checking System Status & Database (/api/status)...", end=" ")
+    print("[TEST 3/7] Checking System Status & Database (/api/status)...", end=" ")
     code, body, lat = make_request(f"{base}/api/status")
     if code == 200 and isinstance(body, dict):
         backend = body.get("backend", "unknown")
@@ -92,9 +100,9 @@ def run_tests(base_url: str) -> bool:
         all_passed = False
 
     # -------------------------------------------------------------------------
-    # TEST 3: Fleet KPI Summary (/api/fleet/summary)
+    # TEST 4: Fleet KPI Summary (/api/fleet/summary)
     # -------------------------------------------------------------------------
-    print("[TEST 3/6] Fetching Fleet KPI Statistics (/api/fleet/summary)...", end=" ")
+    print("[TEST 4/7] Fetching Fleet KPI Statistics (/api/fleet/summary)...", end=" ")
     code, body, lat = make_request(f"{base}/api/fleet/summary")
     if code == 200 and isinstance(body, dict):
         drivers = body.get("total_drivers", 0)
@@ -107,9 +115,9 @@ def run_tests(base_url: str) -> bool:
         all_passed = False
 
     # -------------------------------------------------------------------------
-    # TEST 4: Telemetry Trip Session Ingestion (POST /api/trips)
+    # TEST 5: Telemetry Trip Session Ingestion (POST /api/trips)
     # -------------------------------------------------------------------------
-    print("[TEST 4/6] Posting Simulated Telemetry Trip (POST /api/trips)...", end=" ")
+    print("[TEST 5/7] Posting Simulated Telemetry Trip (POST /api/trips)...", end=" ")
     test_trip = {
         "id": f"test-trip-{int(time.time())}",
         "driver_id": "test-pilot-01",
@@ -137,9 +145,9 @@ def run_tests(base_url: str) -> bool:
         all_passed = False
 
     # -------------------------------------------------------------------------
-    # TEST 5: Alert Incident Ingestion (POST /api/alerts)
+    # TEST 6: Alert Incident Ingestion (POST /api/alerts)
     # -------------------------------------------------------------------------
-    print("[TEST 5/6] Posting Distraction Alert Incident (POST /api/alerts)...", end=" ")
+    print("[TEST 6/7] Posting Distraction Alert Incident (POST /api/alerts)...", end=" ")
     test_alert = {
         "trip_id": test_trip["id"],
         "driver_id": "test-pilot-01",
@@ -161,9 +169,9 @@ def run_tests(base_url: str) -> bool:
         all_passed = False
 
     # -------------------------------------------------------------------------
-    # TEST 6: Safety Leaderboard Verification (/api/leaderboard)
+    # TEST 7: Safety Leaderboard Verification (/api/leaderboard)
     # -------------------------------------------------------------------------
-    print("[TEST 6/6] Checking Driver Safety Leaderboard (/api/leaderboard)...", end=" ")
+    print("[TEST 7/7] Checking Driver Safety Leaderboard (/api/leaderboard)...", end=" ")
     code, body, lat = make_request(f"{base}/api/leaderboard")
     if code == 200 and isinstance(body, list):
         print(f"PASS (200 OK, {lat:.1f}ms)")
@@ -174,8 +182,8 @@ def run_tests(base_url: str) -> bool:
 
     print("\n" + "=" * 65)
     if all_passed:
-        print("      ALL DEPLOYMENT VERIFICATION TESTS PASSED (6/6)")
-        print(f" Dashboard is fully operational at: {base}")
+        print("      ALL DEPLOYMENT VERIFICATION TESTS PASSED (7/7)")
+        print(f" Dashboard & Live Monitor fully operational at: {base}")
     else:
         print("      SOME TESTS FAILED - Check server logs above.")
     print("=" * 65 + "\n")

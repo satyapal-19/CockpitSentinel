@@ -624,8 +624,10 @@ def run_live_monitor(
     auto_identify: bool = True,
     face_check_interval: int = 20,
     face_threshold: float = 0.65,
+    headless: bool = False,
+    cloud_url: str | None = None,
 ) -> None:
-    """Open a webcam or video file and show processed frames until Q or Esc is pressed."""
+    """Open a webcam, IP camera stream, or video file and monitor driver fatigue and distraction."""
 
     capture = cv2.VideoCapture(source)
     if not capture.isOpened():
@@ -861,18 +863,49 @@ def run_live_monitor(
                             duration_seconds=round(dur, 1),
                             notes=f"Triggered by: {', '.join(processed.assessment.reasons) or 'driver distraction'}",
                         )
-                        db.save_alert(incident)
+                        if db:
+                            db.save_alert(incident)
+
+                        if cloud_url:
+                            try:
+                                import json
+                                from urllib.request import Request, urlopen
+
+                                payload = json.dumps(incident.to_dict()).encode("utf-8")
+                                req = Request(
+                                    f"{cloud_url.rstrip('/')}/api/alerts",
+                                    data=payload,
+                                    headers={"Content-Type": "application/json"},
+                                    method="POST",
+                                )
+                                with urlopen(req, timeout=2.0):
+                                    pass
+                            except Exception:
+                                pass
                     except Exception:
                         pass
 
-            cv2.imshow(WINDOW_TITLE, processed.image)
-            key = cv2.waitKey(1) & 0xFF
-            if key in (ord("q"), 27):
-                break
+            if not headless:
+                cv2.imshow(WINDOW_TITLE, processed.image)
+                key = cv2.waitKey(1) & 0xFF
+                if key in (ord("q"), 27):
+                    break
+            else:
+                time.sleep(0.001)
+                st = monitor.trip_tracker.current_stats
+                if st.total_frames % 30 == 0:
+                    status_level = processed.assessment.level.value.upper()
+                    print(
+                        f"\r[LIVE MONITOR] {st.formatted_trip_time} | Attentive: {st.attention_score:.1f}% | "
+                        f"Risk: {status_level} | FPS: {st.fps:.1f}   ",
+                        end="",
+                        flush=True,
+                    )
     finally:
         capture.release()
-        cv2.destroyAllWindows()
-        if db:
+        if not headless:
+            cv2.destroyAllWindows()
+        if db or cloud_url:
             try:
                 stats = monitor.trip_tracker.current_stats
                 if stats.total_frames > 0:
@@ -909,7 +942,27 @@ def run_live_monitor(
                         safety_rating=safety_rating,
                         status="completed",
                     )
-                    db.save_trip(trip_session)
+                    if db:
+                        db.save_trip(trip_session)
+
+                    if cloud_url:
+                        try:
+                            import json
+                            from urllib.request import Request, urlopen
+
+                            payload = json.dumps(trip_session.to_dict()).encode("utf-8")
+                            req = Request(
+                                f"{cloud_url.rstrip('/')}/api/trips",
+                                data=payload,
+                                headers={"Content-Type": "application/json"},
+                                method="POST",
+                            )
+                            with urlopen(req, timeout=5.0):
+                                pass
+                            print(f" [CLOUD SYNC] Trip session synchronized with {cloud_url}")
+                        except Exception as sync_err:
+                            print(f"[CLOUD SYNC NOTICE] Could not upload trip to cloud: {sync_err}")
+
                     print("\n" + "=" * 62)
                     print(f" [DATABASE] Trip session saved for {save_drv_name}")
                     print(f" Duration: {stats.formatted_trip_time} | Attentive: {stats.attention_score:.1f}%")
@@ -1023,6 +1076,17 @@ def main() -> None:
         type=float,
         default=0.65,
         help="Biometric face identification cosine similarity threshold (default: 0.65).",
+    )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run without opening a GUI video window (for background services, ECUs, and SSH).",
+    )
+    parser.add_argument(
+        "--cloud-url",
+        type=str,
+        default=os.environ.get("COCKPIT_CLOUD_URL", None),
+        help="Remote cloud dashboard URL (e.g. https://cockpit-sentinel.onrender.com) to push telemetry trips and alerts over HTTPS.",
     )
     args = parser.parse_args()
 
@@ -1154,6 +1218,8 @@ def main() -> None:
                 route_id=args.route_id,
                 auto_identify=args.auto_identify,
                 face_threshold=args.face_threshold,
+                headless=args.headless,
+                cloud_url=args.cloud_url,
             )
     except KeyboardInterrupt:
         print("\nMonitor interrupted by user. Exiting cleanly.")
