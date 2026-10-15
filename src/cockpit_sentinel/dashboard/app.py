@@ -413,8 +413,8 @@ def run() -> None:
     """Launch the dashboard with uvicorn."""
     import uvicorn
 
-    port = int(os.getenv("DASHBOARD_PORT", "8000"))
-    uvicorn.run("cockpit_sentinel.dashboard.app:app", host="0.0.0.0", port=port, reload=True)
+    port = int(os.getenv("PORT", os.getenv("DASHBOARD_PORT", "8000")))
+    uvicorn.run("cockpit_sentinel.dashboard.app:app", host="0.0.0.0", port=port, reload=False)
 
 
 if __name__ == "__main__":

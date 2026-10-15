@@ -1,0 +1,19 @@
+# =============================================================================
+# Render.com Infrastructure-as-Code Blueprint for CockpitSentinel
+# =============================================================================
+services:
+  - type: web
+    name: cockpit-sentinel-dashboard
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/status
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_BACKEND
+        value: auto
+      - key: LOG_LEVEL
+        value: INFO
+      - key: MONGODB_URI
+        sync: false
