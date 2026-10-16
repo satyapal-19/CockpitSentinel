@@ -175,8 +175,8 @@
 
     <!-- Start / Stop Overlay Controls (Bottom Bar) -->
     <div class="absolute bottom-3 left-0 right-0 flex items-center justify-center space-x-3 z-30">
-      <button id="btn-toggle-cam" onclick="toggleCamera()" class="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-lg shadow-cyan-600/30 flex items-center space-x-2 transition">
-        <i class="fa-solid fa-play"></i>
+      <button id="btn-toggle-cam" onclick="handleCamButtonClick()" class="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-lg shadow-cyan-600/30 flex items-center space-x-2 transition">
+        <i id="btn-cam-icon" class="fa-solid fa-play"></i>
         <span id="btn-cam-label">Start In-Cabin Monitor</span>
       </button>
 
@@ -196,10 +196,102 @@
       </div>
       <h2 class="text-xl font-bold text-white mb-1">Universal In-Cabin Live Monitor</h2>
       <p class="text-xs text-slate-400 max-w-sm mb-6">Runs driver fatigue, automatic biometric face identification, phone detection, and smoking detection directly from your browser. Telemetry logs to your cloud fleet database.</p>
-      <button onclick="toggleCamera()" class="px-6 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold shadow-lg shadow-cyan-600/40 flex items-center space-x-2 transition">
+      <button onclick="startPreTripVerification()" class="px-6 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold shadow-lg shadow-cyan-600/40 flex items-center space-x-2 transition">
         <i class="fa-solid fa-camera"></i>
-        <span>Activate Camera & Start Trip</span>
+        <span>Scan Face & Start Journey</span>
       </button>
+    </div>
+
+    <!-- Pre-Trip Biometric Driver Verification Modal -->
+    <div id="pre-trip-modal" class="absolute inset-0 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-4 z-40 hidden">
+      <div class="hud-card w-full max-w-md p-6 rounded-2xl border border-cyan-500/40 shadow-2xl relative">
+        <button onclick="cancelPreTripScan()" class="absolute top-4 right-4 text-slate-400 hover:text-white text-sm">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+
+        <!-- Scanning State View -->
+        <div id="scan-view-scanning" class="flex flex-col items-center text-center">
+          <div class="relative w-28 h-28 mb-4 flex items-center justify-center">
+            <div class="absolute inset-0 rounded-full border-2 border-dashed border-cyan-400/60 animate-spin" style="animation-duration: 8s;"></div>
+            <div class="w-20 h-20 rounded-full bg-cyan-950/80 border border-cyan-400 flex items-center justify-center shadow-lg shadow-cyan-500/30">
+              <i class="fa-solid fa-id-card-clip text-cyan-400 text-3xl animate-pulse"></i>
+            </div>
+            <div class="absolute inset-x-2 top-2 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-bounce" style="animation-duration: 1.5s;"></div>
+          </div>
+          <h3 class="text-base font-bold text-white mb-1">In-Cabin Biometric Scan</h3>
+          <p class="text-xs text-slate-400 max-w-xs mb-4">Please look directly into the camera. CockpitSentinel is identifying your registered driver profile to apply your safety thresholds.</p>
+          <div class="flex items-center space-x-2 text-xs text-cyan-400 font-mono">
+            <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+            <span id="scan-status-text">Analyzing facial biometrics...</span>
+          </div>
+        </div>
+
+        <!-- Verified Match View -->
+        <div id="scan-view-matched" class="flex flex-col items-center text-center hidden">
+          <div class="w-16 h-16 rounded-full bg-emerald-950/80 border-2 border-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-500/40 mb-3 animate-pulse">
+            <i class="fa-solid fa-circle-check text-emerald-400 text-3xl"></i>
+          </div>
+          <span class="text-[10px] font-mono tracking-wider px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 mb-1">BIOMETRIC MATCH VERIFIED</span>
+          <h3 id="matched-driver-name" class="text-lg font-bold text-white mb-0.5">Satyapal Gaikwad</h3>
+          <p id="matched-driver-license" class="text-xs text-slate-400 font-mono mb-4">DL-MH-13-2021-0089201</p>
+
+          <!-- Custom Calibrated Thresholds Preview -->
+          <div class="w-full bg-slate-900/80 border border-slate-800 rounded-xl p-3 mb-4 text-left">
+            <div class="text-[10px] text-slate-400 font-bold mb-2">PERSONALIZED SAFETY CALIBRATIONS</div>
+            <div class="grid grid-cols-3 gap-2 text-center">
+              <div class="bg-slate-800/60 p-2 rounded-lg">
+                <div class="text-[9px] text-slate-400">EYE OPEN (EAR)</div>
+                <div id="matched-ear" class="text-xs font-bold text-emerald-400 font-mono">&ge; 0.22</div>
+              </div>
+              <div class="bg-slate-800/60 p-2 rounded-lg">
+                <div class="text-[9px] text-slate-400">MOUTH (MAR)</div>
+                <div id="matched-mar" class="text-xs font-bold text-cyan-400 font-mono">&le; 0.60</div>
+              </div>
+              <div class="bg-slate-800/60 p-2 rounded-lg">
+                <div class="text-[9px] text-slate-400">HEAD YAW</div>
+                <div id="matched-yaw" class="text-xs font-bold text-indigo-400 font-mono">&plusmn;30°</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="w-full space-y-2">
+            <button onclick="confirmAndStartJourney()" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 flex items-center justify-center space-x-2 transition">
+              <i class="fa-solid fa-play"></i>
+              <span id="btn-start-verified">Start Journey as Verified Driver</span>
+            </button>
+            <button onclick="showManualSelectView()" class="w-full py-1 text-xs text-slate-400 hover:text-slate-200">
+              Select different driver profile
+            </button>
+          </div>
+        </div>
+
+        <!-- Unverified / Manual Select View -->
+        <div id="scan-view-unverified" class="flex flex-col items-center text-center hidden">
+          <div class="w-14 h-14 rounded-full bg-amber-950/80 border-2 border-amber-400/80 flex items-center justify-center shadow-lg shadow-amber-500/30 mb-3">
+            <i class="fa-solid fa-user-gear text-amber-400 text-2xl"></i>
+          </div>
+          <h3 class="text-base font-bold text-white mb-1">Driver Profile</h3>
+          <p class="text-xs text-slate-400 max-w-xs mb-3" id="unverified-msg">Select your driver profile below to apply personalized thresholds, or continue with standard defaults:</p>
+
+          <div class="w-full text-left mb-4">
+            <label class="text-[10px] text-slate-400 font-semibold mb-1 block">ASSIGN DRIVER PROFILE:</label>
+            <select id="modal-driver-select" onchange="onModalDriverChange()" class="w-full bg-slate-900 text-white text-xs px-3 py-2.5 rounded-xl border border-slate-700 outline-none focus:border-cyan-500">
+              <option value="">Guest Driver (Default Calibrations)</option>
+            </select>
+          </div>
+
+          <div class="w-full space-y-2">
+            <button onclick="confirmAndStartJourney()" class="w-full py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-lg shadow-cyan-600/30 flex items-center justify-center space-x-2 transition">
+              <i class="fa-solid fa-car"></i>
+              <span id="btn-start-manual">Confirm & Begin Journey</span>
+            </button>
+            <button onclick="retryBiometricScan()" class="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 flex items-center justify-center space-x-2 transition">
+              <i class="fa-solid fa-rotate-right"></i>
+              <span>Retry Face Scan</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </main>
 
@@ -335,12 +427,12 @@
       isDistractionInFlight = true;
 
       try {
-        // Render 320x240 frame snapshot for low bandwidth and sub-50ms inference
+        // Render 320x240 frame snapshot directly from video stream
         const snap = document.createElement('canvas');
         snap.width = 320;
         snap.height = 240;
         const sCtx = snap.getContext('2d');
-        sCtx.drawImage(canvasElement, 0, 0, 320, 240);
+        sCtx.drawImage(videoElement, 0, 0, 320, 240);
         const b64 = snap.toDataURL('image/jpeg', 0.65);
 
         const res = await fetch('/api/monitor/detect-distraction', {
@@ -395,11 +487,11 @@
 
       try {
         const snap = document.createElement('canvas');
-        snap.width = 240;
-        snap.height = 180;
+        snap.width = 320;
+        snap.height = 240;
         const sCtx = snap.getContext('2d');
-        sCtx.drawImage(canvasElement, 0, 0, 240, 180);
-        const b64 = snap.toDataURL('image/jpeg', 0.70);
+        sCtx.drawImage(videoElement, 0, 0, 320, 240);
+        const b64 = snap.toDataURL('image/jpeg', 0.80);
 
         const res = await fetch('/api/identify-face', {
           method: 'POST',
@@ -507,10 +599,11 @@
         const scaleY = h / 240.0;
         for (const det of activeDetections) {
           const [x1, y1, x2, y2] = det.box;
-          const bx = x1 * scaleX;
-          const by = y1 * scaleY;
           const bw = (x2 - x1) * scaleX;
           const bh = (y2 - y1) * scaleY;
+          // Mirror box X coordinate to match horizontally flipped camera view
+          const bx = w - (x2 * scaleX);
+          const by = y1 * scaleY;
           const isPhone = det.label.toLowerCase().includes('phone');
           const color = isPhone ? '#06b6d4' : '#f97316';
 
@@ -737,64 +830,295 @@
     // =========================================================================
     // CAMERA CONTROLS & INITIALIZATION
     // =========================================================================
-    async function toggleCamera() {
+    // =========================================================================
+    // PRE-TRIP BIOMETRIC SCAN & DRIVER SELECTION WORKFLOW
+    // =========================================================================
+    let preTripAutoStartTimer = null;
+    let pendingDriver = null;
+
+    async function handleCamButtonClick() {
       if (isRunning) {
-        // Stop Camera
-        isRunning = false;
+        await stopTripSession();
+      } else {
+        await startPreTripVerification();
+      }
+    }
+
+    async function toggleCamera() {
+      await handleCamButtonClick();
+    }
+
+    async function startPreTripVerification() {
+      getAudioContext();
+      document.getElementById('standby-splash').classList.add('hidden');
+      document.getElementById('pre-trip-modal').classList.remove('hidden');
+      showScanningView();
+
+      await initCameraStream();
+      populateModalDrivers();
+
+      // Allow camera 700ms to stabilize auto-exposure, then capture snapshot
+      setTimeout(performPreTripFaceScan, 700);
+    }
+
+    function cancelPreTripScan() {
+      if (preTripAutoStartTimer) {
+        clearInterval(preTripAutoStartTimer);
+        preTripAutoStartTimer = null;
+      }
+      document.getElementById('pre-trip-modal').classList.add('hidden');
+      if (!isRunning) {
+        document.getElementById('standby-splash').classList.remove('hidden');
         if (cameraInstance) {
           cameraInstance.stop();
+          cameraInstance = null;
         }
-        clearInterval(tripTimerInterval);
-        await sendTripSummary();
-        document.getElementById('standby-splash').classList.remove('hidden');
-        document.getElementById('btn-cam-label').innerText = 'Start In-Cabin Monitor';
+      }
+    }
+
+    function showScanningView() {
+      document.getElementById('scan-view-scanning').classList.remove('hidden');
+      document.getElementById('scan-view-matched').classList.add('hidden');
+      document.getElementById('scan-view-unverified').classList.add('hidden');
+      document.getElementById('scan-status-text').innerText = 'Acquiring facial biometrics...';
+    }
+
+    function showManualSelectView() {
+      if (preTripAutoStartTimer) {
+        clearInterval(preTripAutoStartTimer);
+        preTripAutoStartTimer = null;
+      }
+      document.getElementById('scan-view-scanning').classList.add('hidden');
+      document.getElementById('scan-view-matched').classList.add('hidden');
+      document.getElementById('scan-view-unverified').classList.remove('hidden');
+    }
+
+    function populateModalDrivers() {
+      const sel = document.getElementById('modal-driver-select');
+      sel.innerHTML = '<option value="">Guest Driver (Default Calibrations)</option>';
+      enrolledDrivers.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        opt.innerText = `${d.name} (${d.license_number})`;
+        sel.appendChild(opt);
+      });
+      const topSel = document.getElementById('driver-select');
+      if (topSel.value) {
+        sel.value = topSel.value;
+      }
+    }
+
+    async function performPreTripFaceScan() {
+      if (isRunning) return;
+      document.getElementById('scan-status-text').innerText = 'Matching against fleet registry...';
+
+      try {
+        const snap = document.createElement('canvas');
+        snap.width = 320;
+        snap.height = 240;
+        const sCtx = snap.getContext('2d');
+        sCtx.drawImage(videoElement, 0, 0, 320, 240);
+        const b64 = snap.toDataURL('image/jpeg', 0.85);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+        const res = await fetch('/api/identify-face', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: b64, threshold: 0.50 }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.identified && data.driver) {
+            onDriverBiometricallyMatched(data.driver, data.confidence_percent || 95);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Pre-trip face identification check:', err);
+      }
+
+      // If not identified or timeout, show manual selection view
+      showManualSelectView();
+    }
+
+    function onDriverBiometricallyMatched(driver, confidence) {
+      pendingDriver = driver;
+      playBeep(880, 0.12);
+      setTimeout(() => playBeep(1320, 0.20), 130);
+
+      document.getElementById('scan-view-scanning').classList.add('hidden');
+      document.getElementById('scan-view-matched').classList.remove('hidden');
+      document.getElementById('scan-view-unverified').classList.add('hidden');
+
+      document.getElementById('matched-driver-name').innerText = driver.name;
+      document.getElementById('matched-driver-license').innerText = `${driver.license_number || 'LIC-VERIFIED'} • ${confidence}% MATCH`;
+
+      const t = driver.thresholds || {};
+      const ear = Number(t.eye_aspect_ratio_threshold) || 0.22;
+      const mar = Number(t.mouth_aspect_ratio_threshold) || 0.60;
+      const yaw = Number(t.head_yaw_threshold_degrees) || 30.0;
+      document.getElementById('matched-ear').innerText = `≥ ${ear.toFixed(2)}`;
+      document.getElementById('matched-mar').innerText = `≤ ${mar.toFixed(2)}`;
+      document.getElementById('matched-yaw').innerText = `±${yaw.toFixed(0)}°`;
+
+      // Auto-start countdown (3 seconds)
+      let countdown = 3;
+      const btn = document.getElementById('btn-start-verified');
+      btn.innerText = `Start Journey as ${driver.name} (${countdown}s...)`;
+
+      if (preTripAutoStartTimer) clearInterval(preTripAutoStartTimer);
+      preTripAutoStartTimer = setInterval(() => {
+        countdown--;
+        if (countdown <= 0) {
+          clearInterval(preTripAutoStartTimer);
+          preTripAutoStartTimer = null;
+          confirmAndStartJourney();
+        } else {
+          btn.innerText = `Start Journey as ${driver.name} (${countdown}s...)`;
+        }
+      }, 1000);
+    }
+
+    function onModalDriverChange() {
+      const sel = document.getElementById('modal-driver-select');
+      const val = sel.value;
+      if (!val) {
+        pendingDriver = null;
       } else {
-        // Start Camera
-        getAudioContext(); // Enable Web Audio on user gesture
-        document.getElementById('standby-splash').classList.add('hidden');
-        document.getElementById('btn-cam-label').innerText = 'End Active Trip';
-        isRunning = true;
-        totalSeconds = 0;
-        attentiveSeconds = 0;
-        inattentiveSeconds = 0;
-        alertCount = 0;
-        frameCount = 0;
-        lastDistractionCheck = 0;
-        lastFaceCheck = 0;
-        tripStartTime = new Date().toISOString();
+        pendingDriver = enrolledDrivers.find(d => d.id === val) || null;
+      }
+    }
 
-        tripTimerInterval = setInterval(() => {
-          const s = Math.round(totalSeconds);
-          const hrs = String(Math.floor(s / 3600)).padStart(2, '0');
-          const mins = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
-          const secs = String(s % 60).padStart(2, '0');
-          document.getElementById('trip-time').innerText = `${hrs}:${mins}:${secs}`;
-        }, 1000);
+    function retryBiometricScan() {
+      showScanningView();
+      setTimeout(performPreTripFaceScan, 500);
+    }
 
-        if (!faceMeshInstance) {
-          faceMeshInstance = new FaceMesh({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
-          });
-          faceMeshInstance.setOptions({
-            maxNumFaces: 1,
-            refineLandmarks: true,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5,
-          });
-          faceMeshInstance.onResults(onResults);
-        }
+    function confirmAndStartJourney() {
+      if (preTripAutoStartTimer) {
+        clearInterval(preTripAutoStartTimer);
+        preTripAutoStartTimer = null;
+      }
 
+      // Check if driver was selected in modal or matched
+      const modalSel = document.getElementById('modal-driver-select');
+      if (!pendingDriver && modalSel && modalSel.value) {
+        pendingDriver = enrolledDrivers.find(d => d.id === modalSel.value) || null;
+      }
+
+      verifiedDriver = pendingDriver;
+      const topSel = document.getElementById('driver-select');
+      if (verifiedDriver) {
+        topSel.value = verifiedDriver.id;
+        const t = verifiedDriver.thresholds || {};
+        thresholdEar = Number(t.eye_aspect_ratio_threshold) || 0.22;
+        thresholdMar = Number(t.mouth_aspect_ratio_threshold) || 0.60;
+        thresholdYaw = Number(t.head_yaw_threshold_degrees) || 30.0;
+      } else {
+        topSel.value = '';
+        thresholdEar = 0.22;
+        thresholdMar = 0.60;
+        thresholdYaw = 30.0;
+      }
+
+      // Update HUD thresholds and top badge
+      document.getElementById('ear-threshold').innerText = `≥ ${thresholdEar.toFixed(2)}`;
+      document.getElementById('mar-threshold').innerText = `≤ ${thresholdMar.toFixed(2)}`;
+      document.getElementById('yaw-threshold').innerText = `±${thresholdYaw.toFixed(0)}°`;
+
+      const badge = document.getElementById('pilot-badge');
+      const badgeText = document.getElementById('pilot-badge-text');
+      if (verifiedDriver) {
+        badge.className = "hud-card px-3 py-1 rounded-xl border border-emerald-500/50 flex items-center space-x-2 text-xs mono bg-emerald-950/40";
+        badgeText.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> <span class="text-emerald-400 font-bold">${verifiedDriver.name.toUpperCase()} [VERIFIED]</span>`;
+      } else {
+        badge.className = "hud-card px-3 py-1 rounded-xl border border-slate-700 flex items-center space-x-2 text-xs mono";
+        badgeText.innerHTML = `<span class="w-2 h-2 rounded-full bg-slate-500"></span> <span class="text-slate-300">GUEST DRIVER</span>`;
+      }
+
+      // Hide Modal and start Active Trip!
+      document.getElementById('pre-trip-modal').classList.add('hidden');
+      document.getElementById('standby-splash').classList.add('hidden');
+
+      startActiveTripState();
+    }
+
+    function startActiveTripState() {
+      isRunning = true;
+      totalSeconds = 0;
+      attentiveSeconds = 0;
+      inattentiveSeconds = 0;
+      alertCount = 0;
+      frameCount = 0;
+      lastDistractionCheck = 0;
+      lastFaceCheck = 0;
+      tripStartTime = new Date().toISOString();
+
+      document.getElementById('btn-cam-label').innerText = 'End Active Trip';
+      const icon = document.getElementById('btn-cam-icon');
+      if (icon) icon.className = 'fa-solid fa-stop';
+      document.getElementById('btn-toggle-cam').className = 'px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-600/30 flex items-center space-x-2 transition';
+
+      playBeep(523, 0.10);
+      setTimeout(() => playBeep(659, 0.15), 110);
+
+      if (tripTimerInterval) clearInterval(tripTimerInterval);
+      tripTimerInterval = setInterval(() => {
+        const s = Math.round(totalSeconds);
+        const hrs = String(Math.floor(s / 3600)).padStart(2, '0');
+        const mins = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+        const secs = String(s % 60).padStart(2, '0');
+        document.getElementById('trip-time').innerText = `${hrs}:${mins}:${secs}`;
+      }, 1000);
+    }
+
+    async function stopTripSession() {
+      isRunning = false;
+      if (tripTimerInterval) {
+        clearInterval(tripTimerInterval);
+        tripTimerInterval = null;
+      }
+      if (cameraInstance) {
+        cameraInstance.stop();
+        cameraInstance = null;
+      }
+      document.getElementById('btn-cam-label').innerText = 'Start In-Cabin Monitor';
+      const icon = document.getElementById('btn-cam-icon');
+      if (icon) icon.className = 'fa-solid fa-play';
+      document.getElementById('btn-toggle-cam').className = 'px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-lg shadow-cyan-600/30 flex items-center space-x-2 transition';
+
+      await sendTripSummary();
+      document.getElementById('standby-splash').classList.remove('hidden');
+    }
+
+    async function initCameraStream() {
+      if (!faceMeshInstance) {
+        faceMeshInstance = new FaceMesh({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+        });
+        faceMeshInstance.setOptions({
+          maxNumFaces: 1,
+          refineLandmarks: true,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5,
+        });
+        faceMeshInstance.onResults(onResults);
+      }
+
+      if (!cameraInstance) {
         cameraInstance = new Camera(videoElement, {
           onFrame: async () => {
-            if (isRunning) {
-              await faceMeshInstance.send({ image: videoElement });
-            }
+            await faceMeshInstance.send({ image: videoElement });
           },
           width: 640,
           height: 480,
           facingMode: facingMode
         });
-
         await cameraInstance.start();
       }
     }

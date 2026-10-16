@@ -60,6 +60,12 @@ class FaceIdentifier:
         if image is None or image.size == 0:
             return None
 
+        # Downscale large frames to max 320px for rapid, low-memory MTCNN processing on CPU
+        h, w = image.shape[:2]
+        if max(h, w) > 320:
+            scale = 320.0 / max(h, w)
+            image = cv2.resize(image, (int(w * scale), int(h * scale)))
+
         # Convert to RGB if 3 channels
         if len(image.shape) == 3 and image.shape[2] == 3:
             rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
