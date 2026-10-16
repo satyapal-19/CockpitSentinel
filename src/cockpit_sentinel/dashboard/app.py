@@ -453,8 +453,8 @@ def get_distraction_detector():
                 from cockpit_sentinel.detection.distraction import DistractionConfig, DistractionDetector
 
                 cfg = DistractionConfig(
-                    phone_confidence_threshold=0.35,
-                    smoking_confidence_threshold=0.30,
+                    phone_confidence_threshold=0.25,
+                    smoking_confidence_threshold=0.25,
                     smoking_labels=("smoke", "cigarette", "smoking", "vape"),
                 )
                 _distraction_detector = DistractionDetector(found_path, config=cfg, device="cpu")
@@ -466,8 +466,8 @@ def get_distraction_detector():
 
 class DetectDistractionRequest(BaseModel):
     image_base64: str
-    phone_threshold: float = 0.35
-    smoking_threshold: float = 0.30
+    phone_threshold: float = 0.25
+    smoking_threshold: float = 0.25
 
 
 @app.post("/api/monitor/detect-distraction")

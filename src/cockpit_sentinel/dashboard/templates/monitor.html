@@ -163,7 +163,10 @@
       <!-- Distraction / Alerts Count -->
       <div class="hud-card p-2.5 rounded-xl">
         <div class="flex justify-between items-center text-[10px] text-slate-400">
-          <span>DISTRACTION / ALERTS</span>
+          <div class="flex items-center space-x-1.5">
+            <span>DISTRACTION / ALERTS</span>
+            <span id="yolo-status-pill" class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-500/40 font-mono">YOLO11s ON</span>
+          </div>
           <span id="val-alerts-count" class="text-rose-400 font-bold mono">0 LOGGED</span>
         </div>
         <div class="flex items-center space-x-1.5 mt-1 flex-wrap gap-1">
@@ -337,6 +340,7 @@
     let verifiedDriver = null;
     let isFaceCheckInFlight = false;
     let lastFaceCheck = 0;
+    let latestFaceLandmarks = null;
 
     const videoElement = document.getElementById('input-video');
     const canvasElement = document.getElementById('output-canvas');
@@ -417,12 +421,54 @@
     }
 
     // =========================================================================
+    // HIGH-SPEED FACE CROPPING HELPER (160x160 CROP FOR SUB-50MS FACE MATCHING)
+    // =========================================================================
+    function getFaceCropSnapshot() {
+      const snap = document.createElement('canvas');
+      snap.width = 160;
+      snap.height = 160;
+      const sCtx = snap.getContext('2d');
+
+      const vw = videoElement.videoWidth || 640;
+      const vh = videoElement.videoHeight || 480;
+
+      if (latestFaceLandmarks && latestFaceLandmarks.length > 0) {
+        let minX = 1, minY = 1, maxX = 0, maxY = 0;
+        for (let i = 0; i < latestFaceLandmarks.length; i++) {
+          const pt = latestFaceLandmarks[i];
+          if (pt.x < minX) minX = pt.x;
+          if (pt.x > maxX) maxX = pt.x;
+          if (pt.y < minY) minY = pt.y;
+          if (pt.y > maxY) maxY = pt.y;
+        }
+
+        const boxW = (maxX - minX) * vw;
+        const boxH = (maxY - minY) * vh;
+        const padX = boxW * 0.25;
+        const padY = boxH * 0.25;
+
+        const sx = Math.max(0, minX * vw - padX);
+        const sy = Math.max(0, minY * vh - padY);
+        const sw = Math.min(vw - sx, boxW + 2 * padX);
+        const sh = Math.min(vh - sy, boxH + 2 * padY);
+
+        sCtx.drawImage(videoElement, sx, sy, sw, sh, 0, 0, 160, 160);
+      } else {
+        const size = Math.min(vw, vh) * 0.65;
+        const sx = (vw - size) / 2.0;
+        const sy = (vh - size) / 2.0;
+        sCtx.drawImage(videoElement, sx, sy, size, size, 0, 0, 160, 160);
+      }
+      return snap.toDataURL('image/jpeg', 0.85);
+    }
+
+    // =========================================================================
     // SERVER-SIDE YOLO DISTRACTION DETECTOR (PHONE & SMOKING)
     // =========================================================================
     async function pollDistractionModel() {
       if (!isRunning || isDistractionInFlight) return;
       const now = performance.now();
-      if (now - lastDistractionCheck < 350) return; // 3 times per second
+      if (now - lastDistractionCheck < 350) return; // ~3 times per second
       lastDistractionCheck = now;
       isDistractionInFlight = true;
 
@@ -438,11 +484,21 @@
         const res = await fetch('/api/monitor/detect-distraction', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_base64: b64 })
+          body: JSON.stringify({ image_base64: b64, phone_threshold: 0.25, smoking_threshold: 0.25 })
         });
 
         if (res.ok) {
           const data = await res.json();
+          const yoloPill = document.getElementById('yolo-status-pill');
+          if (yoloPill) {
+            if (data.available) {
+              yoloPill.className = "text-[9px] px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-500/40 font-mono";
+              yoloPill.innerText = "YOLO11s ON";
+            } else {
+              yoloPill.className = "text-[9px] px-1.5 py-0.5 rounded bg-rose-950/60 text-rose-400 border border-rose-500/40 font-mono";
+              yoloPill.innerText = "YOLO OFFLINE";
+            }
+          }
           isPhoneActive = Boolean(data.phone_detected);
           isSmokingActive = Boolean(data.smoking_detected);
           activeDetections = data.detections || [];
@@ -486,17 +542,12 @@
       isFaceCheckInFlight = true;
 
       try {
-        const snap = document.createElement('canvas');
-        snap.width = 320;
-        snap.height = 240;
-        const sCtx = snap.getContext('2d');
-        sCtx.drawImage(videoElement, 0, 0, 320, 240);
-        const b64 = snap.toDataURL('image/jpeg', 0.80);
+        const b64 = getFaceCropSnapshot();
 
         const res = await fetch('/api/identify-face', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_base64: b64 })
+          body: JSON.stringify({ image_base64: b64, threshold: 0.45 })
         });
 
         if (res.ok) {
@@ -623,7 +674,8 @@
 
       // Compute facial metrics
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        const landmarks = results.multiFaceLandmarks[0];
+        latestFaceLandmarks = results.multiFaceLandmarks[0];
+        const landmarks = latestFaceLandmarks;
         const leftEar = computeEAR(landmarks, [33, 160, 158, 133, 153, 144], w, h);
         const rightEar = computeEAR(landmarks, [362, 385, 387, 263, 373, 380], w, h);
         const ear = (leftEar + rightEar) / 2.0;
@@ -632,6 +684,7 @@
 
         updateTelemetryUI(ear, mar, yaw, dt);
       } else {
+        latestFaceLandmarks = null;
         updateTelemetryUI(0.0, 0.0, 0.0, dt, true);
       }
     }
@@ -913,20 +966,15 @@
       document.getElementById('scan-status-text').innerText = 'Matching against fleet registry...';
 
       try {
-        const snap = document.createElement('canvas');
-        snap.width = 320;
-        snap.height = 240;
-        const sCtx = snap.getContext('2d');
-        sCtx.drawImage(videoElement, 0, 0, 320, 240);
-        const b64 = snap.toDataURL('image/jpeg', 0.85);
+        const b64 = getFaceCropSnapshot();
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
 
         const res = await fetch('/api/identify-face', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_base64: b64, threshold: 0.50 }),
+          body: JSON.stringify({ image_base64: b64, threshold: 0.45 }),
           signal: controller.signal
         });
         clearTimeout(timeoutId);

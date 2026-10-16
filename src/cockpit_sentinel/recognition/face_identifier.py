@@ -72,6 +72,31 @@ class FaceIdentifier:
         else:
             rgb_image = image
 
+        h, w = rgb_image.shape[:2]
+
+        # 0. Fast Path: If image is already a pre-cropped face (square-ish or <= 240px),
+        # directly feed into InceptionResnetV1 in ~30ms without expensive MTCNN pyramid search!
+        is_pre_cropped = (w <= 240 and h <= 240) or (0.7 <= (w / max(1, h)) <= 1.4)
+        if is_pre_cropped and min(h, w) >= 40:
+            try:
+                resized = cv2.resize(rgb_image, (160, 160))
+                tensor = (
+                    torch.from_numpy(resized)
+                    .permute(2, 0, 1)
+                    .float()
+                    .sub(127.5)
+                    .div(128.0)
+                    .unsqueeze(0)
+                    .to(self.device)
+                )
+                with torch.no_grad():
+                    embedding = self._model(tensor).cpu().numpy().flatten()
+                norm = np.linalg.norm(embedding)
+                if norm > 1e-6:
+                    return embedding / norm
+            except Exception as exc:
+                logger.debug("Fast-path face extraction exception: %s", exc)
+
         try:
             # 1. Primary: Try MTCNN aligned crop
             face_tensor = self._mtcnn(rgb_image)

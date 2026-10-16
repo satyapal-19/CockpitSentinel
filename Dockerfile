@@ -27,9 +27,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements-cloud.txt
 
 # Pre-cache FaceNet InceptionResnetV1 weights in Docker image to eliminate runtime download delay
-RUN mkdir -p /root/.cache/torch/checkpoints && \
+RUN mkdir -p /root/.cache/torch/checkpoints /root/.cache/torch/hub/checkpoints && \
     curl -fSL -o /root/.cache/torch/checkpoints/20180402-114759-vggface2.pt \
-    https://github.com/timesler/facenet-pytorch/releases/download/v2.2.9/20180402-114759-vggface2.pt
+    https://github.com/timesler/facenet-pytorch/releases/download/v2.2.9/20180402-114759-vggface2.pt && \
+    cp /root/.cache/torch/checkpoints/20180402-114759-vggface2.pt /root/.cache/torch/hub/checkpoints/20180402-114759-vggface2.pt
 
 # Copy application source code, configs, templates, and evaluation reports
 COPY src/ ./src/
