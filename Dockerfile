@@ -10,9 +10,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8000 \
     DATABASE_BACKEND=auto
 
-# Install minimal OS dependencies for headless OpenCV & healthcheck
+# Install minimal OS dependencies for OpenCV, PyTorch & healthcheck (libgl1 fixes libGL.so.1 missing)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
     libglib2.0-0 \
+    libgomp1 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
