@@ -21,6 +21,7 @@ WORKDIR /app
 # Install optimized cloud dependencies (CPU PyTorch + OpenCV Headless)
 COPY requirements-cloud.txt pyproject.toml ./
 RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r requirements-cloud.txt
 
 # Copy application source code, configs, templates, and evaluation reports
