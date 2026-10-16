@@ -28,6 +28,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY src/ ./src/
 COPY configs/ ./configs/
 COPY test_reports/ ./test_reports/
+COPY weights/trained/yolo11s_distraction/best.pt ./weights/trained/yolo11s_distraction/best.pt
+COPY weights/trained/yolo11s_balanced_distraction/best.pt ./weights/trained/yolo11s_balanced_distraction/best.pt
 
 # Install cockpit-sentinel package metadata
 RUN pip install --no-cache-dir --no-deps -e .

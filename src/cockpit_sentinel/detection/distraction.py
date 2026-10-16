@@ -37,7 +37,7 @@ class DistractionConfig:
 
     phone_confidence_threshold: float = 0.40
     smoking_confidence_threshold: float = 0.35
-    smoking_labels: tuple[str, ...] = ("cigarette", "smoking", "vape")
+    smoking_labels: tuple[str, ...] = ("smoke", "cigarette", "smoking", "vape")
 
     def __post_init__(self) -> None:
         if not 0 < self.phone_confidence_threshold <= 1:
@@ -251,7 +251,7 @@ def _extract_detections(
                 )
 
                 # Heuristic: filter large smoking boxes (>25% frame) which are false positives
-                if frame_area > 0 and raw_label.casefold() in {"cigarette", "smoking", "vape"}:
+                if frame_area > 0 and raw_label.casefold() in {"smoke", "cigarette", "smoking", "vape"}:
                     box_w = max(0, coords[2] - coords[0])
                     box_h = max(0, coords[3] - coords[1])
                     if (box_w * box_h) > (0.25 * frame_area):

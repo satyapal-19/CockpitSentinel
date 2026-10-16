@@ -61,9 +61,15 @@
       </div>
     </div>
 
+    <!-- Center Biometric Pilot Badge -->
+    <div id="pilot-badge" class="hud-card px-3 py-1 rounded-xl border border-slate-700 hidden md:flex items-center space-x-2 text-xs mono">
+      <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+      <span id="pilot-badge-text" class="text-slate-400">DRIVER: SCANNING FACE...</span>
+    </div>
+
     <!-- Active Pilot & Route Selectors -->
     <div class="flex items-center space-x-2">
-      <select id="driver-select" class="bg-slate-800 text-slate-200 text-xs px-2.5 py-1.5 rounded-lg border border-slate-700 outline-none">
+      <select id="driver-select" onchange="onDriverManualSelect()" class="bg-slate-800 text-slate-200 text-xs px-2.5 py-1.5 rounded-lg border border-slate-700 outline-none max-w-[140px] sm:max-w-none">
         <option value="">Guest Driver (Defaults)</option>
       </select>
       <select id="route-select" class="hidden sm:block bg-slate-800 text-slate-200 text-xs px-2.5 py-1.5 rounded-lg border border-slate-700 outline-none">
@@ -78,7 +84,7 @@
 
   <!-- Main Viewport: Camera & Real-Time HUD -->
   <main class="flex-1 relative flex items-center justify-center overflow-hidden bg-black">
-    <!-- Raw Video Capture (Mirrored for Natural Mirror Feel) -->
+    <!-- Raw Video Capture -->
     <video id="input-video" class="hidden" playsinline></video>
     <canvas id="output-canvas" class="w-full h-full object-contain"></canvas>
 
@@ -157,12 +163,12 @@
       <!-- Distraction / Alerts Count -->
       <div class="hud-card p-2.5 rounded-xl">
         <div class="flex justify-between items-center text-[10px] text-slate-400">
-          <span>INTERVENTIONS</span>
+          <span>DISTRACTION / ALERTS</span>
           <span id="val-alerts-count" class="text-rose-400 font-bold mono">0 LOGGED</span>
         </div>
-        <div class="flex items-center space-x-1.5 mt-1">
+        <div class="flex items-center space-x-1.5 mt-1 flex-wrap gap-1">
           <span id="phone-pill" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">PHONE: NO</span>
-          <span id="alarm-speaker" class="text-slate-500 text-xs"><i class="fa-solid fa-volume-high"></i></span>
+          <span id="smoking-pill" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">SMOKE: NO</span>
         </div>
       </div>
     </div>
@@ -189,7 +195,7 @@
         <i class="fa-solid fa-video text-white text-2xl"></i>
       </div>
       <h2 class="text-xl font-bold text-white mb-1">Universal In-Cabin Live Monitor</h2>
-      <p class="text-xs text-slate-400 max-w-sm mb-6">Runs driver fatigue, blink, yawn, and head pose analysis directly on this device from anywhere. Telemetry logs automatically to your cloud fleet database.</p>
+      <p class="text-xs text-slate-400 max-w-sm mb-6">Runs driver fatigue, automatic biometric face identification, phone detection, and smoking detection directly from your browser. Telemetry logs to your cloud fleet database.</p>
       <button onclick="toggleCamera()" class="px-6 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold shadow-lg shadow-cyan-600/40 flex items-center space-x-2 transition">
         <i class="fa-solid fa-camera"></i>
         <span>Activate Camera & Start Trip</span>
@@ -215,15 +221,30 @@
     let alertCount = 0;
     let lastAlertLoggedTime = 0;
 
+    // Biometric & Distraction Thresholds (Dynamically updated on face verification)
     let thresholdEar = 0.22;
     let thresholdMar = 0.60;
     let thresholdYaw = 30.0;
     let consecutiveEyesClosedSeconds = 0;
     let consecutiveYawnSeconds = 0;
     let consecutiveLookingAwaySeconds = 0;
+    let consecutiveDistractionSeconds = 0;
     let lastFrameTime = performance.now();
     let frameCount = 0;
     let fps = 0;
+
+    // Distraction State
+    let isPhoneActive = false;
+    let isSmokingActive = false;
+    let activeDetections = [];
+    let isDistractionInFlight = false;
+    let lastDistractionCheck = 0;
+
+    // Face Identification State
+    let enrolledDrivers = [];
+    let verifiedDriver = null;
+    let isFaceCheckInFlight = false;
+    let lastFaceCheck = 0;
 
     const videoElement = document.getElementById('input-video');
     const canvasElement = document.getElementById('output-canvas');
@@ -249,7 +270,7 @@
         const gain = ctx.createGain();
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(freq, ctx.currentTime);
-        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.setValueAtTime(0.35, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
         osc.connect(gain);
         gain.connect(ctx.destination);
@@ -283,7 +304,6 @@
     }
 
     function computeMAR(landmarks, w, h) {
-      // Mouth landmarks: 61 (left corner), 291 (right corner), 13 (upper lip), 14 (lower lip)
       const top = landmarks[13];
       const bot = landmarks[14];
       const left = landmarks[61];
@@ -294,7 +314,6 @@
     }
 
     function estimateHeadYaw(landmarks) {
-      // Approximate yaw angle using nose bridge (1) vs left cheek (234) and right cheek (454)
       const noseX = landmarks[1].x;
       const leftX = landmarks[234].x;
       const rightX = landmarks[454].x;
@@ -303,6 +322,154 @@
       const midpoint = (leftX + rightX) / 2.0;
       const offset = (noseX - midpoint) / (faceWidth / 2.0);
       return Math.max(-50.0, Math.min(50.0, offset * 45.0));
+    }
+
+    // =========================================================================
+    // SERVER-SIDE YOLO DISTRACTION DETECTOR (PHONE & SMOKING)
+    // =========================================================================
+    async function pollDistractionModel() {
+      if (!isRunning || isDistractionInFlight) return;
+      const now = performance.now();
+      if (now - lastDistractionCheck < 350) return; // 3 times per second
+      lastDistractionCheck = now;
+      isDistractionInFlight = true;
+
+      try {
+        // Render 320x240 frame snapshot for low bandwidth and sub-50ms inference
+        const snap = document.createElement('canvas');
+        snap.width = 320;
+        snap.height = 240;
+        const sCtx = snap.getContext('2d');
+        sCtx.drawImage(canvasElement, 0, 0, 320, 240);
+        const b64 = snap.toDataURL('image/jpeg', 0.65);
+
+        const res = await fetch('/api/monitor/detect-distraction', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: b64 })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          isPhoneActive = Boolean(data.phone_detected);
+          isSmokingActive = Boolean(data.smoking_detected);
+          activeDetections = data.detections || [];
+
+          // Update HUD Pills
+          const phonePill = document.getElementById('phone-pill');
+          if (isPhoneActive) {
+            phonePill.innerText = `PHONE: ${Math.round(data.phone_confidence * 100)}%`;
+            phonePill.className = "text-[10px] px-2 py-0.5 rounded bg-rose-600 text-white font-bold border border-rose-400 animate-pulse";
+          } else {
+            phonePill.innerText = "PHONE: NO";
+            phonePill.className = "text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700";
+          }
+
+          const smokingPill = document.getElementById('smoking-pill');
+          if (isSmokingActive) {
+            smokingPill.innerText = `SMOKING: ${Math.round(data.smoking_confidence * 100)}%`;
+            smokingPill.className = "text-[10px] px-2 py-0.5 rounded bg-amber-600 text-white font-bold border border-amber-400 animate-pulse";
+          } else {
+            smokingPill.innerText = "SMOKE: NO";
+            smokingPill.className = "text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700";
+          }
+        }
+      } catch (err) {
+        // Server YOLO not reachable; gracefully continue MediaPipe
+      } finally {
+        isDistractionInFlight = false;
+      }
+    }
+
+    // =========================================================================
+    // AUTOMATIC BIOMETRIC IN-CABIN FACE IDENTIFICATION & PROFILE CALIBRATION
+    // =========================================================================
+    async function scanInCabinFaceBiometrics() {
+      if (!isRunning || isFaceCheckInFlight) return;
+      const now = performance.now();
+      // Check every 3 seconds until verified, then every 10 seconds for maintenance
+      const interval = verifiedDriver ? 10000 : 3000;
+      if (now - lastFaceCheck < interval) return;
+      lastFaceCheck = now;
+      isFaceCheckInFlight = true;
+
+      try {
+        const snap = document.createElement('canvas');
+        snap.width = 240;
+        snap.height = 180;
+        const sCtx = snap.getContext('2d');
+        sCtx.drawImage(canvasElement, 0, 0, 240, 180);
+        const b64 = snap.toDataURL('image/jpeg', 0.70);
+
+        const res = await fetch('/api/identify-face', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: b64 })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const badge = document.getElementById('pilot-badge');
+          const badgeText = document.getElementById('pilot-badge-text');
+
+          if (data.identified && data.driver) {
+            verifiedDriver = data.driver;
+            const dSel = document.getElementById('driver-select');
+            dSel.value = verifiedDriver.id;
+
+            // Apply personalized biometric thresholds from verified driver profile!
+            if (verifiedDriver.thresholds) {
+              const t = verifiedDriver.thresholds;
+              thresholdEar = Number(t.eye_aspect_ratio_threshold) || 0.22;
+              thresholdMar = Number(t.mouth_aspect_ratio_threshold) || 0.60;
+              thresholdYaw = Number(t.head_yaw_threshold_degrees) || 30.0;
+
+              document.getElementById('ear-threshold').innerText = `≥ ${thresholdEar.toFixed(2)}`;
+              document.getElementById('mar-threshold').innerText = `≤ ${thresholdMar.toFixed(2)}`;
+              document.getElementById('yaw-threshold').innerText = `±${thresholdYaw.toFixed(0)}°`;
+            }
+
+            badge.className = "hud-card px-3 py-1 rounded-xl border border-emerald-500/50 flex items-center space-x-2 text-xs mono bg-emerald-950/40";
+            badgeText.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> <span class="text-emerald-400 font-bold">${verifiedDriver.name.toUpperCase()} [${data.confidence_percent}% VERIFIED]</span>`;
+          } else {
+            if (!verifiedDriver) {
+              badge.className = "hud-card px-3 py-1 rounded-xl border border-amber-500/40 flex items-center space-x-2 text-xs mono bg-amber-950/30";
+              badgeText.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400"></span> <span class="text-amber-300">GUEST DRIVER (DEFAULT THRESHOLDS)</span>`;
+            }
+          }
+        }
+      } catch (err) {
+        // Face recognition endpoint not reachable
+      } finally {
+        isFaceCheckInFlight = false;
+      }
+    }
+
+    // Manual driver selection handler
+    function onDriverManualSelect() {
+      const dSel = document.getElementById('driver-select');
+      const selectedId = dSel.value;
+      if (!selectedId) {
+        verifiedDriver = null;
+        thresholdEar = 0.22;
+        thresholdMar = 0.60;
+        thresholdYaw = 30.0;
+        document.getElementById('ear-threshold').innerText = `≥ 0.22`;
+        document.getElementById('mar-threshold').innerText = `≤ 0.60`;
+        document.getElementById('yaw-threshold').innerText = `±30°`;
+        return;
+      }
+      const match = enrolledDrivers.find(d => d.id === selectedId);
+      if (match && match.thresholds) {
+        verifiedDriver = match;
+        const t = match.thresholds;
+        thresholdEar = Number(t.eye_aspect_ratio_threshold) || 0.22;
+        thresholdMar = Number(t.mouth_aspect_ratio_threshold) || 0.60;
+        thresholdYaw = Number(t.head_yaw_threshold_degrees) || 30.0;
+        document.getElementById('ear-threshold').innerText = `≥ ${thresholdEar.toFixed(2)}`;
+        document.getElementById('mar-threshold').innerText = `≤ ${thresholdMar.toFixed(2)}`;
+        document.getElementById('yaw-threshold').innerText = `±${thresholdYaw.toFixed(0)}°`;
+      }
     }
 
     // =========================================================================
@@ -330,11 +497,40 @@
       canvasCtx.drawImage(results.image, 0, 0, w, h);
       canvasCtx.restore();
 
+      // Trigger asynchronous distraction & face recognition polling
+      pollDistractionModel();
+      scanInCabinFaceBiometrics();
+
+      // Draw active YOLO Bounding Boxes onto canvas
+      if (activeDetections && activeDetections.length > 0) {
+        const scaleX = w / 320.0;
+        const scaleY = h / 240.0;
+        for (const det of activeDetections) {
+          const [x1, y1, x2, y2] = det.box;
+          const bx = x1 * scaleX;
+          const by = y1 * scaleY;
+          const bw = (x2 - x1) * scaleX;
+          const bh = (y2 - y1) * scaleY;
+          const isPhone = det.label.toLowerCase().includes('phone');
+          const color = isPhone ? '#06b6d4' : '#f97316';
+
+          canvasCtx.strokeStyle = color;
+          canvasCtx.lineWidth = 3;
+          canvasCtx.strokeRect(bx, by, bw, bh);
+
+          canvasCtx.fillStyle = color;
+          canvasCtx.font = 'bold 12px JetBrains Mono, monospace';
+          const labelText = `${det.label.toUpperCase()} ${Math.round(det.confidence * 100)}%`;
+          const textWidth = canvasCtx.measureText(labelText).width;
+          canvasCtx.fillRect(bx, Math.max(0, by - 22), textWidth + 8, 22);
+          canvasCtx.fillStyle = '#ffffff';
+          canvasCtx.fillText(labelText, bx + 4, Math.max(15, by - 6));
+        }
+      }
+
+      // Compute facial metrics
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
         const landmarks = results.multiFaceLandmarks[0];
-
-        // Left Eye: 33, 160, 158, 133, 153, 144
-        // Right Eye: 362, 385, 387, 263, 373, 380
         const leftEar = computeEAR(landmarks, [33, 160, 158, 133, 153, 144], w, h);
         const rightEar = computeEAR(landmarks, [362, 385, 387, 263, 373, 380], w, h);
         const ear = (leftEar + rightEar) / 2.0;
@@ -343,7 +539,6 @@
 
         updateTelemetryUI(ear, mar, yaw, dt);
       } else {
-        // No face in view
         updateTelemetryUI(0.0, 0.0, 0.0, dt, true);
       }
     }
@@ -392,11 +587,23 @@
         consecutiveLookingAwaySeconds += dt;
         if (consecutiveLookingAwaySeconds >= 2.0) {
           isAttentive = false;
-          reasons.push('Head Turned / Looking Away');
+          reasons.push('Head Turned Away');
           activeSignals.push('looking_away');
         }
       } else {
         consecutiveLookingAwaySeconds = 0;
+      }
+
+      // Check Phone & Smoking Distractions
+      if (isPhoneActive) {
+        isAttentive = false;
+        reasons.push('Mobile Phone Detected');
+        activeSignals.push('phone_detected');
+      }
+      if (isSmokingActive) {
+        isAttentive = false;
+        reasons.push('Smoking Detected');
+        activeSignals.push('smoking_detected');
       }
 
       if (noFace) {
@@ -410,7 +617,7 @@
         inattentiveSeconds += dt;
       }
 
-      // UI Updates
+      // UI Meters
       document.getElementById('val-ear').innerText = ear.toFixed(2);
       document.getElementById('bar-ear').style.width = `${Math.min(100, (ear / 0.35) * 100)}%`;
       document.getElementById('ear-state').innerText = eyesClosed ? 'CLOSED' : 'OPEN';
@@ -428,20 +635,19 @@
       const attentionPercent = totalSeconds > 0 ? ((attentiveSeconds / totalSeconds) * 100.0).toFixed(1) : '100.0';
       document.getElementById('attention-score').innerText = `${attentionPercent}%`;
 
-      // Status Pill & Perimeter Glow
+      // Status Banner & Perimeter Alarm Glow
       const pill = document.getElementById('status-pill');
       const text = document.getElementById('status-text');
       const dot = document.getElementById('status-dot');
       const perimeter = document.getElementById('alarm-perimeter');
 
       if (!isAttentive) {
-        // Warning State
         pill.className = 'hud-card px-3.5 py-1.5 rounded-xl border border-rose-500 text-rose-400 text-xs font-bold flex items-center space-x-2';
         text.innerText = `ALERT: ${reasons[0].toUpperCase()}`;
         dot.className = 'w-2 h-2 rounded-full bg-rose-500 animate-ping';
         perimeter.className = 'absolute inset-0 pointer-events-none transition-all duration-300 border-4 border-rose-500 alarm-glow-warning';
 
-        // Play Acoustic Warning Beep
+        // Play Acoustic Warning Buzzer
         playBeep(980, 0.15);
 
         // Upload Alert Incident to Cloud API (throttle: max once per 4 seconds)
@@ -453,7 +659,6 @@
           sendAlertIncident(activeSignals, reasons.join('; '));
         }
       } else {
-        // Safe State
         pill.className = 'hud-card px-3.5 py-1.5 rounded-xl border border-emerald-500/40 text-emerald-400 text-xs font-bold flex items-center space-x-2';
         text.innerText = 'ATTENTIVE [SAFE]';
         dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
@@ -466,8 +671,8 @@
     // =========================================================================
     async function sendAlertIncident(signals, notes) {
       const driverSelect = document.getElementById('driver-select');
-      const driverId = driverSelect.value || 'remote-pilot-web';
-      const driverName = driverSelect.options[driverSelect.selectedIndex]?.text || 'Remote Web Pilot';
+      const driverId = verifiedDriver ? verifiedDriver.id : (driverSelect.value || 'remote-pilot-web');
+      const driverName = verifiedDriver ? verifiedDriver.name : (driverSelect.options[driverSelect.selectedIndex]?.text || 'Remote Web Pilot');
       const routeSelect = document.getElementById('route-select');
       const routeName = routeSelect.options[routeSelect.selectedIndex]?.text || 'Active Highway Corridor';
 
@@ -494,8 +699,8 @@
     async function sendTripSummary() {
       if (totalSeconds < 3) return;
       const driverSelect = document.getElementById('driver-select');
-      const driverId = driverSelect.value || 'remote-pilot-web';
-      const driverName = driverSelect.options[driverSelect.selectedIndex]?.text || 'Remote Web Pilot';
+      const driverId = verifiedDriver ? verifiedDriver.id : (driverSelect.value || 'remote-pilot-web');
+      const driverName = verifiedDriver ? verifiedDriver.name : (driverSelect.options[driverSelect.selectedIndex]?.text || 'Remote Web Pilot');
       const routeSelect = document.getElementById('route-select');
       const routeName = routeSelect.options[routeSelect.selectedIndex]?.text || 'Active Highway Corridor';
 
@@ -554,6 +759,8 @@
         inattentiveSeconds = 0;
         alertCount = 0;
         frameCount = 0;
+        lastDistractionCheck = 0;
+        lastFaceCheck = 0;
         tripStartTime = new Date().toISOString();
 
         tripTimerInterval = setInterval(() => {
@@ -605,9 +812,9 @@
       try {
         const dRes = await fetch('/api/drivers');
         if (dRes.ok) {
-          const drivers = await dRes.json();
+          enrolledDrivers = await dRes.json();
           const dSel = document.getElementById('driver-select');
-          drivers.forEach(d => {
+          enrolledDrivers.forEach(d => {
             const opt = document.createElement('option');
             opt.value = d.id;
             opt.innerText = `${d.name} (${d.license_number})`;

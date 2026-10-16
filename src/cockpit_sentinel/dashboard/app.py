@@ -271,26 +271,34 @@ async def identify_face(req: FaceEnrollRequest) -> dict[str, Any]:
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid image data: {exc}"
         )
 
-    from cockpit_sentinel.recognition import get_face_identifier
+    try:
+        from cockpit_sentinel.recognition import get_face_identifier
 
-    db = get_db_manager()
-    drivers = db.list_drivers()
-    identifier = get_face_identifier()
+        db = get_db_manager()
+        drivers = db.list_drivers()
+        identifier = get_face_identifier()
 
-    matched_driver, score = identifier.identify_driver(img, drivers, threshold=0.55)
-    if matched_driver:
+        matched_driver, score = identifier.identify_driver(img, drivers, threshold=0.55)
+        if matched_driver:
+            return {
+                "identified": True,
+                "driver": matched_driver.to_dict(),
+                "confidence": round(score, 3),
+                "confidence_percent": int(round(score * 100)),
+            }
         return {
-            "identified": True,
-            "driver": matched_driver.to_dict(),
+            "identified": False,
+            "driver": None,
             "confidence": round(score, 3),
-            "confidence_percent": int(round(score * 100)),
+            "message": "No registered driver matched",
         }
-    return {
-        "identified": False,
-        "driver": None,
-        "confidence": round(score, 3),
-        "message": "No registered driver matched",
-    }
+    except Exception as exc:
+        return {
+            "identified": False,
+            "driver": None,
+            "confidence": 0.0,
+            "message": f"Face identification unavailable: {exc}",
+        }
 
 
 # =============================================================================
@@ -416,6 +424,109 @@ async def get_leaderboard() -> list[dict[str, Any]]:
     """Get ranked driver safety ratings leaderboard."""
     db = get_db_manager()
     return db.get_leaderboard()
+
+
+# =============================================================================
+# REST API: Distraction Detection (Phone & Smoking)
+# =============================================================================
+
+_distraction_detector = None
+
+
+def get_distraction_detector():
+    global _distraction_detector
+    if _distraction_detector is None:
+        candidate_paths = [
+            Path("weights/trained/yolo11s_balanced_distraction/best.pt"),
+            Path("weights/trained/yolo11s_distraction/best.pt"),
+            Path(__file__).resolve().parents[3] / "weights" / "trained" / "yolo11s_balanced_distraction" / "best.pt",
+            Path(__file__).resolve().parents[3] / "weights" / "trained" / "yolo11s_distraction" / "best.pt",
+        ]
+        found_path = None
+        for p in candidate_paths:
+            if p.exists():
+                found_path = p
+                break
+
+        if found_path:
+            try:
+                from cockpit_sentinel.detection.distraction import DistractionConfig, DistractionDetector
+
+                cfg = DistractionConfig(
+                    phone_confidence_threshold=0.35,
+                    smoking_confidence_threshold=0.30,
+                    smoking_labels=("smoke", "cigarette", "smoking", "vape"),
+                )
+                _distraction_detector = DistractionDetector(found_path, config=cfg, device="cpu")
+            except Exception as e:
+                print(f"[DISTRACTION DETECTOR] Initialization error: {e}")
+                _distraction_detector = None
+    return _distraction_detector
+
+
+class DetectDistractionRequest(BaseModel):
+    image_base64: str
+    phone_threshold: float = 0.35
+    smoking_threshold: float = 0.30
+
+
+@app.post("/api/monitor/detect-distraction")
+async def detect_distraction(req: DetectDistractionRequest) -> dict[str, Any]:
+    """Detect mobile phone use and smoking in a submitted camera frame."""
+    detector = get_distraction_detector()
+    if not detector:
+        return {
+            "available": False,
+            "phone_detected": False,
+            "smoking_detected": False,
+            "detections": [],
+            "message": "YOLO distraction model not available on server",
+        }
+
+    try:
+        header_split = req.image_base64.split(",")
+        raw_b64 = header_split[1] if len(header_split) > 1 else header_split[0]
+        img_bytes = base64.b64decode(raw_b64)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise ValueError("Could not decode image")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid image data: {exc}"
+        )
+
+    try:
+        analysis = detector.analyze(img)
+        detections = []
+        for d in analysis.detections:
+            detections.append(
+                {
+                    "box": [int(x) for x in d.box],
+                    "label": str(d.label),
+                    "confidence": float(round(d.confidence, 3)),
+                }
+            )
+
+        phone_detected = bool(analysis.signals.phone_detected)
+        smoking_detected = bool(analysis.signals.smoking_detected)
+
+        return {
+            "available": True,
+            "phone_detected": phone_detected,
+            "phone_confidence": round(analysis.phone_confidence, 3) if analysis.phone_confidence else 0.0,
+            "smoking_detected": smoking_detected,
+            "smoking_confidence": round(analysis.smoking_confidence, 3) if analysis.smoking_confidence else 0.0,
+            "detections": detections,
+        }
+    except Exception as err:
+        return {
+            "available": True,
+            "phone_detected": False,
+            "smoking_detected": False,
+            "detections": [],
+            "error": str(err),
+        }
 
 
 # =============================================================================

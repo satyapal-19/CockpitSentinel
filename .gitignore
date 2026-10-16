@@ -69,8 +69,16 @@ Desktop.ini
 scratch_ppt_prompt.txt
 ppt_background_template.png
 
-# Weights directory (large model files downloaded at setup)
-weights/
+# Weights directory (large raw models ignored, trained light distraction models whitelisted for cloud deployment)
+weights/*
+!weights/trained/
+weights/trained/*
+!weights/trained/yolo11s_distraction/
+weights/trained/yolo11s_distraction/*
+!weights/trained/yolo11s_distraction/best.pt
+!weights/trained/yolo11s_balanced_distraction/
+weights/trained/yolo11s_balanced_distraction/*
+!weights/trained/yolo11s_balanced_distraction/best.pt
 
 # Assets directory (generated logos, not source code)
 assets/
