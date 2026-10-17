@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import cv2
@@ -31,14 +32,29 @@ class FaceIdentifier:
         self.similarity_threshold = similarity_threshold
 
         logger.info("Initializing FaceIdentifier on device: %s", self.device)
-        self._mtcnn = MTCNN(
-            image_size=160,
-            margin=14,
-            keep_all=False,
-            device=self.device,
-            post_process=True,
-        )
-        self._model = InceptionResnetV1(pretrained="vggface2").eval().to(self.device)
+
+        # Check for lightweight ONNX FaceNet model for sub-100ms low-memory CPU inference
+        self._dnn_model = None
+        onnx_candidates = [
+            Path("weights/pretrained/facenet.onnx"),
+            Path(__file__).resolve().parents[3] / "weights" / "pretrained" / "facenet.onnx",
+        ]
+        for opath in onnx_candidates:
+            if opath.exists():
+                try:
+                    self._dnn_model = cv2.dnn.readNetFromONNX(str(opath))
+                    logger.info("Loaded FaceNet ONNX model via cv2.dnn: %s", opath)
+                    break
+                except Exception as e:
+                    logger.warning("Failed to load FaceNet ONNX model: %s", e)
+
+        # Lazy-loaded PyTorch models to conserve memory on 512MB cloud instances
+        self._model: InceptionResnetV1 | None = None
+        self._mtcnn: MTCNN | None = None
+
+        if self._dnn_model is None:
+            # If ONNX is not available, initialize PyTorch InceptionResnetV1
+            self._model = InceptionResnetV1(pretrained="vggface2").eval().to(self.device)
 
         # OpenCV Haar fallback face detector
         self._haar_cascade = None
@@ -47,6 +63,24 @@ class FaceIdentifier:
             self._haar_cascade = cv2.CascadeClassifier(cascade_path)
         except Exception:
             self._haar_cascade = None
+
+    @property
+    def model(self) -> InceptionResnetV1:
+        if self._model is None:
+            self._model = InceptionResnetV1(pretrained="vggface2").eval().to(self.device)
+        return self._model
+
+    @property
+    def mtcnn(self) -> MTCNN:
+        if self._mtcnn is None:
+            self._mtcnn = MTCNN(
+                image_size=160,
+                margin=14,
+                keep_all=False,
+                device=self.device,
+                post_process=True,
+            )
+        return self._mtcnn
 
     def extract_embedding(self, image: np.ndarray) -> np.ndarray | None:
         """Extract a 512-dimensional L2-normalized face embedding from a frame.
@@ -77,7 +111,23 @@ class FaceIdentifier:
         # 0. Fast Path: If image is already a pre-cropped face (square-ish or <= 240px),
         # directly feed into InceptionResnetV1 in ~30ms without expensive MTCNN pyramid search!
         is_pre_cropped = (w <= 240 and h <= 240) or (0.7 <= (w / max(1, h)) <= 1.4)
-        if is_pre_cropped and min(h, w) >= 40:
+        if self._dnn_model is not None and is_pre_cropped and min(h, w) >= 40:
+            try:
+                blob = cv2.dnn.blobFromImage(
+                    rgb_image,
+                    1.0 / 128.0,
+                    (160, 160),
+                    mean=(127.5, 127.5, 127.5),
+                    swapRB=False,
+                )
+                self._dnn_model.setInput(blob)
+                embedding = self._dnn_model.forward().flatten()
+                norm = np.linalg.norm(embedding)
+                if norm > 1e-6:
+                    return embedding / norm
+            except Exception as exc:
+                logger.debug("cv2.dnn fast-path face extraction exception: %s", exc)
+        elif is_pre_cropped and min(h, w) >= 40:
             try:
                 resized = cv2.resize(rgb_image, (160, 160))
                 tensor = (
@@ -89,8 +139,8 @@ class FaceIdentifier:
                     .unsqueeze(0)
                     .to(self.device)
                 )
-                with torch.no_grad():
-                    embedding = self._model(tensor).cpu().numpy().flatten()
+                with torch.inference_mode():
+                    embedding = self.model(tensor).cpu().numpy().flatten()
                 norm = np.linalg.norm(embedding)
                 if norm > 1e-6:
                     return embedding / norm
@@ -99,13 +149,13 @@ class FaceIdentifier:
 
         try:
             # 1. Primary: Try MTCNN aligned crop
-            face_tensor = self._mtcnn(rgb_image)
+            face_tensor = self.mtcnn(rgb_image)
             if face_tensor is not None:
                 if len(face_tensor.shape) == 3:
                     face_tensor = face_tensor.unsqueeze(0)
                 face_tensor = face_tensor.to(self.device)
-                with torch.no_grad():
-                    embedding = self._model(face_tensor).cpu().numpy().flatten()
+                with torch.inference_mode():
+                    embedding = self.model(face_tensor).cpu().numpy().flatten()
                 norm = np.linalg.norm(embedding)
                 if norm > 1e-6:
                     return embedding / norm
@@ -131,13 +181,13 @@ class FaceIdentifier:
                     face_crop = rgb_image[y1:y2, x1:x2]
 
                     try:
-                        face_tensor = self._mtcnn(face_crop)
+                        face_tensor = self.mtcnn(face_crop)
                         if face_tensor is not None:
                             if len(face_tensor.shape) == 3:
                                 face_tensor = face_tensor.unsqueeze(0)
                             face_tensor = face_tensor.to(self.device)
-                            with torch.no_grad():
-                                embedding = self._model(face_tensor).cpu().numpy().flatten()
+                            with torch.inference_mode():
+                                embedding = self.model(face_tensor).cpu().numpy().flatten()
                             norm = np.linalg.norm(embedding)
                             if norm > 1e-6:
                                 return embedding / norm
@@ -156,8 +206,8 @@ class FaceIdentifier:
                         .unsqueeze(0)
                         .to(self.device)
                     )
-                    with torch.no_grad():
-                        embedding = self._model(tensor).cpu().numpy().flatten()
+                    with torch.inference_mode():
+                        embedding = self.model(tensor).cpu().numpy().flatten()
                     norm = np.linalg.norm(embedding)
                     if norm > 1e-6:
                         return embedding / norm

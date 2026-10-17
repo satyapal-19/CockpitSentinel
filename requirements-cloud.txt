@@ -10,3 +10,5 @@ opencv-python-headless>=4.9.0
 requests>=2.31.0
 facenet-pytorch>=2.6.0
 ultralytics>=8.3.0
+onnx>=1.14.0
+onnxslim>=0.1.48

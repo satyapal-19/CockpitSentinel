@@ -9,7 +9,8 @@
 
 param(
     [int]$Port = 8000,
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [switch]$Monitor
 )
 
 Set-StrictMode -Version Latest
@@ -35,7 +36,8 @@ if ($Port -eq 8000 -and (Test-Path -LiteralPath $envFile)) {
     }
 }
 
-$dashboardUrl = "http://localhost:$Port"
+$targetPath = if ($Monitor) { "/monitor" } else { "" }
+$dashboardUrl = "http://localhost:$Port$targetPath"
 
 Write-Host ""
 Write-Host "=============================================================" -ForegroundColor Cyan

@@ -4,15 +4,33 @@ from __future__ import annotations
 
 import base64
 import os
+
+# Limit CPU thread count to 1 to prevent memory explosion & OOM on multi-core cloud hypervisors (e.g. Render 512MB)
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["TORCH_NUM_THREADS"] = "1"
+os.environ["YOLO_OFFLINE"] = "true"
+os.environ["YOLO_AUTOINSTALL"] = "false"
+os.environ["YOLO_VERBOSE"] = "false"
+
 from pathlib import Path
 from typing import Any
 
 import cv2
 import numpy as np
+import torch
 from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
+
+# Set PyTorch single-thread limits
+torch.set_num_threads(1)
+if hasattr(torch, "set_num_interop_threads"):
+    torch.set_num_interop_threads(1)
 
 from cockpit_sentinel.database.client import get_db_manager
 from cockpit_sentinel.database.models import (
@@ -27,10 +45,39 @@ TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 INDEX_HTML_PATH = TEMPLATES_DIR / "index.html"
 MONITOR_HTML_PATH = TEMPLATES_DIR / "monitor.html"
 
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Pre-warm FaceNet and YOLO models during container boot for instantaneous zero-lag HTTP inference."""
+    print("[STARTUP] Pre-warming FaceNet and YOLO models for cloud inference...")
+    try:
+        from cockpit_sentinel.recognition import get_face_identifier
+
+        fid = get_face_identifier()
+        dummy_face = np.zeros((160, 160, 3), dtype=np.uint8)
+        fid.extract_embedding(dummy_face)
+        print("[STARTUP] Face Identifier pre-warmed successfully.")
+    except Exception as e:
+        print(f"[STARTUP] Face Identifier pre-warm notice: {e}")
+
+    try:
+        det = get_distraction_detector()
+        if det:
+            dummy_det = np.zeros((240, 320, 3), dtype=np.uint8)
+            det.analyze(dummy_det)
+            print("[STARTUP] Distraction Detector pre-warmed successfully.")
+    except Exception as e:
+        print(f"[STARTUP] Distraction Detector pre-warm notice: {e}")
+    yield
+
+
 app = FastAPI(
     title="CockpitSentinel Fleet & Driver Management Dashboard",
     description="Real-time telemetry, personalized driver thresholds, route tracking, alert audits, and safety ratings.",
     version="2.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -256,7 +303,7 @@ async def enroll_driver_face(driver_id: str, req: FaceEnrollRequest) -> dict[str
 
 
 @app.post("/api/identify-face")
-async def identify_face(req: FaceEnrollRequest) -> dict[str, Any]:
+def identify_face(req: FaceEnrollRequest) -> dict[str, Any]:
     """Identify the driver in the provided image against registered database profiles."""
     try:
         header_split = req.image_base64.split(",")
@@ -437,6 +484,10 @@ def get_distraction_detector():
     global _distraction_detector
     if _distraction_detector is None:
         candidate_paths = [
+            Path("weights/trained/yolo11s_balanced_distraction/best.onnx"),
+            Path("weights/trained/yolo11s_distraction/best.onnx"),
+            Path(__file__).resolve().parents[3] / "weights" / "trained" / "yolo11s_balanced_distraction" / "best.onnx",
+            Path(__file__).resolve().parents[3] / "weights" / "trained" / "yolo11s_distraction" / "best.onnx",
             Path("weights/trained/yolo11s_balanced_distraction/best.pt"),
             Path("weights/trained/yolo11s_distraction/best.pt"),
             Path(__file__).resolve().parents[3] / "weights" / "trained" / "yolo11s_balanced_distraction" / "best.pt",
@@ -458,6 +509,7 @@ def get_distraction_detector():
                     smoking_labels=("smoke", "cigarette", "smoking", "vape"),
                 )
                 _distraction_detector = DistractionDetector(found_path, config=cfg, device="cpu")
+                print(f"[DISTRACTION DETECTOR] Initialized model from: {found_path}")
             except Exception as e:
                 print(f"[DISTRACTION DETECTOR] Initialization error: {e}")
                 _distraction_detector = None
@@ -471,7 +523,7 @@ class DetectDistractionRequest(BaseModel):
 
 
 @app.post("/api/monitor/detect-distraction")
-async def detect_distraction(req: DetectDistractionRequest) -> dict[str, Any]:
+def detect_distraction(req: DetectDistractionRequest) -> dict[str, Any]:
     """Detect mobile phone use and smoking in a submitted camera frame."""
     detector = get_distraction_detector()
     if not detector:

@@ -468,7 +468,7 @@
     async function pollDistractionModel() {
       if (!isRunning || isDistractionInFlight) return;
       const now = performance.now();
-      if (now - lastDistractionCheck < 350) return; // ~3 times per second
+      if (now - lastDistractionCheck < 750) return; // ~1.3 times per second (optimal cloud latency)
       lastDistractionCheck = now;
       isDistractionInFlight = true;
 
@@ -481,10 +481,15 @@
         sCtx.drawImage(videoElement, 0, 0, 320, 240);
         const b64 = snap.toDataURL('image/jpeg', 0.65);
 
+        const pThresh = (verifiedDriver && verifiedDriver.thresholds && verifiedDriver.thresholds.phone_confidence_threshold)
+          ? Number(verifiedDriver.thresholds.phone_confidence_threshold) : 0.25;
+        const sThresh = (verifiedDriver && verifiedDriver.thresholds && verifiedDriver.thresholds.smoking_confidence_threshold)
+          ? Number(verifiedDriver.thresholds.smoking_confidence_threshold) : 0.25;
+
         const res = await fetch('/api/monitor/detect-distraction', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_base64: b64, phone_threshold: 0.25, smoking_threshold: 0.25 })
+          body: JSON.stringify({ image_base64: b64, phone_threshold: pThresh, smoking_threshold: sThresh })
         });
 
         if (res.ok) {
@@ -521,6 +526,12 @@
             smokingPill.innerText = "SMOKE: NO";
             smokingPill.className = "text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700";
           }
+        } else {
+          const yoloPill = document.getElementById('yolo-status-pill');
+          if (yoloPill) {
+            yoloPill.className = "text-[9px] px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-400 border border-amber-500/40 font-mono";
+            yoloPill.innerText = "YOLO CONNECTING";
+          }
         }
       } catch (err) {
         // Server YOLO not reachable; gracefully continue MediaPipe
@@ -535,8 +546,8 @@
     async function scanInCabinFaceBiometrics() {
       if (!isRunning || isFaceCheckInFlight) return;
       const now = performance.now();
-      // Check every 3 seconds until verified, then every 10 seconds for maintenance
-      const interval = verifiedDriver ? 10000 : 3000;
+      // Check every 4 seconds until verified, then every 30 seconds for maintenance
+      const interval = verifiedDriver ? 30000 : 4000;
       if (now - lastFaceCheck < interval) return;
       lastFaceCheck = now;
       isFaceCheckInFlight = true;
@@ -969,7 +980,7 @@
         const b64 = getFaceCropSnapshot();
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
 
         const res = await fetch('/api/identify-face', {
           method: 'POST',

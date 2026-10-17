@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+import cv2
 import numpy as np
 import yaml
 from ultralytics import YOLO, YOLOWorld
@@ -83,6 +84,80 @@ def load_distraction_config(path: Path) -> DistractionConfig:
 DEFAULT_PHONE_LABELS = frozenset(
     {"cell phone", "phone", "using_phone", "mobile_phone", "calling", "texting"}
 )
+
+
+@dataclass(slots=True)
+class _OnnxBox:
+    cls: list[int]
+    conf: list[float]
+    xyxy: list[list[int]]
+
+
+@dataclass(slots=True)
+class _OnnxResult:
+    boxes: list[_OnnxBox]
+    names: dict[int, str]
+
+
+class OnnxYOLO11Detector:
+    """Sub-100ms ultra-low memory YOLO11 distraction detector using OpenCV DNN."""
+
+    def __init__(self, onnx_path: Path) -> None:
+        if not onnx_path.exists():
+            raise FileNotFoundError(f"ONNX model was not found: {onnx_path}")
+        self.net = cv2.dnn.readNetFromONNX(str(onnx_path))
+        self.names = {0: "earphone", 1: "person", 2: "smoke", 3: "using_phone"}
+
+    def __call__(self, frame: np.ndarray, conf: float = 0.25, **kwargs: Any) -> list[Any]:
+        h, w = frame.shape[:2]
+        blob = cv2.dnn.blobFromImage(frame, 1.0 / 255.0, (640, 640), swapRB=True)
+        self.net.setInput(blob)
+        out = self.net.forward()  # (1, 8, 8400)
+        preds = out[0].T  # (8400, 8)
+
+        scores = preds[:, 4:]
+        class_ids = np.argmax(scores, axis=1)
+        confidences = np.max(scores, axis=1)
+
+        mask = confidences >= conf
+        if not np.any(mask):
+            return [_OnnxResult(boxes=[], names=self.names)]
+
+        f_boxes = preds[:, :4][mask]
+        f_confs = confidences[mask]
+        f_classes = class_ids[mask]
+
+        boxes_xywh: list[list[int]] = []
+        confs_list: list[float] = []
+        class_list: list[int] = []
+
+        scale_x = w / 640.0
+        scale_y = h / 640.0
+
+        for i in range(len(f_boxes)):
+            cx, cy, bw, bh = f_boxes[i]
+            x1 = int((cx - bw / 2.0) * scale_x)
+            y1 = int((cy - bh / 2.0) * scale_y)
+            x2 = int((cx + bw / 2.0) * scale_x)
+            y2 = int((cy + bh / 2.0) * scale_y)
+            boxes_xywh.append([x1, y1, max(1, x2 - x1), max(1, y2 - y1)])
+            confs_list.append(float(f_confs[i]))
+            class_list.append(int(f_classes[i]))
+
+        indices = cv2.dnn.NMSBoxes(boxes_xywh, confs_list, conf, 0.45)
+        boxes_out: list[_OnnxBox] = []
+        if len(indices) > 0:
+            for idx in indices:
+                x, y, bw, bh = boxes_xywh[idx]
+                boxes_out.append(
+                    _OnnxBox(
+                        cls=[class_list[idx]],
+                        conf=[confs_list[idx]],
+                        xyxy=[[x, y, x + bw, y + bh]],
+                    )
+                )
+
+        return [_OnnxResult(boxes=boxes_out, names=self.names)]
 
 
 class DistractionDetector:
@@ -184,9 +259,13 @@ class DistractionDetector:
         )
 
     @staticmethod
-    def _load_phone_model(path: Path, device: str | None = None) -> YOLO:
+    def _load_phone_model(path: Path, device: str | None = None) -> Any:
         if not path.exists():
             raise FileNotFoundError(f"Phone detection model was not found: {path}")
+        if path.suffix.lower() == ".onnx":
+            return OnnxYOLO11Detector(path)
+        import torch
+        torch.set_num_threads(1)
         model = YOLO(path)
         if device is not None:
             with contextlib.suppress(Exception):

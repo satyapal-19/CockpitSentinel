@@ -8,7 +8,16 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8000 \
-    DATABASE_BACKEND=auto
+    DATABASE_BACKEND=auto \
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    VECLIB_MAXIMUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 \
+    TORCH_NUM_THREADS=1 \
+    YOLO_OFFLINE=true \
+    YOLO_AUTOINSTALL=false \
+    YOLO_VERBOSE=false
 
 # Install minimal OS dependencies for OpenCV, PyTorch & healthcheck (libgl1 fixes libGL.so.1 missing)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,11 +35,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r requirements-cloud.txt
 
-# Pre-cache FaceNet InceptionResnetV1 weights in Docker image to eliminate runtime download delay
-RUN mkdir -p /root/.cache/torch/checkpoints /root/.cache/torch/hub/checkpoints && \
+# Pre-cache FaceNet weights and export lightweight ONNX for sub-100ms low-memory CPU inference
+RUN mkdir -p /root/.cache/torch/checkpoints /root/.cache/torch/hub/checkpoints /app/weights/pretrained && \
     curl -fSL -o /root/.cache/torch/checkpoints/20180402-114759-vggface2.pt \
     https://github.com/timesler/facenet-pytorch/releases/download/v2.2.9/20180402-114759-vggface2.pt && \
-    cp /root/.cache/torch/checkpoints/20180402-114759-vggface2.pt /root/.cache/torch/hub/checkpoints/20180402-114759-vggface2.pt
+    cp /root/.cache/torch/checkpoints/20180402-114759-vggface2.pt /root/.cache/torch/hub/checkpoints/20180402-114759-vggface2.pt && \
+    python -c "import torch; from facenet_pytorch import InceptionResnetV1; m=InceptionResnetV1(pretrained='vggface2').eval(); torch.onnx.export(m, torch.randn(1,3,160,160), '/app/weights/pretrained/facenet.onnx', opset_version=14, dynamo=False)"
 
 # Copy application source code, configs, templates, and evaluation reports
 COPY src/ ./src/
@@ -38,6 +48,7 @@ COPY configs/ ./configs/
 COPY test_reports/ ./test_reports/
 COPY weights/trained/yolo11s_distraction/best.pt ./weights/trained/yolo11s_distraction/best.pt
 COPY weights/trained/yolo11s_balanced_distraction/best.pt ./weights/trained/yolo11s_balanced_distraction/best.pt
+COPY weights/trained/yolo11s_balanced_distraction/best.onnx ./weights/trained/yolo11s_balanced_distraction/best.onnx
 
 # Install cockpit-sentinel package metadata
 RUN pip install --no-cache-dir --no-deps -e .

@@ -79,6 +79,7 @@ weights/trained/yolo11s_distraction/*
 !weights/trained/yolo11s_balanced_distraction/
 weights/trained/yolo11s_balanced_distraction/*
 !weights/trained/yolo11s_balanced_distraction/best.pt
+!weights/trained/yolo11s_balanced_distraction/best.onnx
 
 # Assets directory (generated logos, not source code)
 assets/

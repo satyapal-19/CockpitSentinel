@@ -29,22 +29,22 @@
 
 ## Features
 
-| Module                                      | What It Detects / Provides               | How                                                                                                                          |
-| ------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **Universal Web Monitor**             | In-browser live cockpit HUD (`/monitor`) | Runs on any mobile/laptop/tablet without local install: client MediaPipe FaceMesh (30+ FPS) + cloud YOLO11s distraction      |
-| **Pre-Trip Biometric Scan**           | Driver verification & auto-calibration   | Sub-50ms **FaceNet (InceptionResnetV1)** landmark crop match before trip start; auto-loads custom thresholds & guest fallback |
-| **Face Recognition**                  | In-cabin driver auto-identification      | **FaceNet (InceptionResnetV1)** + MTCNN / Haar alignment → auto-loads driver profile & 512-D embeddings                     |
-| **Drowsiness**                        | Eye closure, yawning, looking away       | MediaPipe Face Landmarker / FaceMesh → EAR, MAR, head yaw angles                                                             |
-| **Distraction**                       | Phone use, smoking                       | Fine-tuned **YOLO11s** balanced detector (95.05% phone precision, 89.71% smoke mAP50) + OpenVINO (32.6 FPS) / REST Cloud   |
-| **Risk Scoring**                      | 4-level risk assessment                  | Weighted signal fusion → SAFE / CAUTION / WARNING / CRITICAL                                                                 |
-| **Stabilization**                     | Temporal window (2–3s analysis)         | Multi-second window prevents blink/flicker alarms; clears instantly on attentive return                                       |
-| **Web Dashboard**                     | Fleet UI & calibration sliders           | FastAPI responsive cockpit dashboard with Chart.js analytics & face biometrics modal                                          |
-| **Driver Profiles**                   | Personalized detection thresholds        | Custom EAR, MAR, Yaw, Phone/Smoking conf stored with 512-D face embeddings                                                    |
-| **Route Management**                  | Expressways & corridor tracking          | Distance, duration, risk profile, and assigned driver pilots                                                                  |
-| **Trip Telemetry**                    | Session logs & attention scoring         | Tracks duration, % attentive, frame telemetry, safety rating                                                                  |
-| **Alert History**                     | Incident audit log feed                  | Timestamped alerts with signals, duration, and severity level                                                                 |
-| **Safety Leaderboard**                | Driver ratings & ranking                 | 1–5 star ratings, 0–100 safety score, Gold/Silver badges                                                                     |
-| **Hybrid Database**                   | Cloud sync with offline fallback         | **MongoDB Atlas** with seamless local **SQLite** fallback                                                                     |
+| Module                            | What It Detects / Provides                 | How                                                                                                                                 |
+| --------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **Universal Web Monitor**   | In-browser live cockpit HUD (`/monitor`) | Runs on any mobile/laptop/tablet without local install: client MediaPipe FaceMesh (30+ FPS) + cloud YOLO11s distraction             |
+| **Pre-Trip Biometric Scan** | Driver verification & auto-calibration     | Sub-50ms **FaceNet (InceptionResnetV1)** landmark crop match before trip start; auto-loads custom thresholds & guest fallback |
+| **Face Recognition**        | In-cabin driver auto-identification        | **FaceNet (InceptionResnetV1)** + MTCNN / Haar alignment → auto-loads driver profile & 512-D embeddings                      |
+| **Drowsiness**              | Eye closure, yawning, looking away         | MediaPipe Face Landmarker / FaceMesh → EAR, MAR, head yaw angles                                                                   |
+| **Distraction**             | Phone use, smoking                         | Fine-tuned **YOLO11s** balanced detector (95.05% phone precision, 89.71% smoke mAP50) + OpenVINO (32.6 FPS) / REST Cloud      |
+| **Risk Scoring**            | 4-level risk assessment                    | Weighted signal fusion → SAFE / CAUTION / WARNING / CRITICAL                                                                       |
+| **Stabilization**           | Temporal window (2–3s analysis)           | Multi-second window prevents blink/flicker alarms; clears instantly on attentive return                                             |
+| **Web Dashboard**           | Fleet UI & calibration sliders             | FastAPI responsive cockpit dashboard with Chart.js analytics & face biometrics modal                                                |
+| **Driver Profiles**         | Personalized detection thresholds          | Custom EAR, MAR, Yaw, Phone/Smoking conf stored with 512-D face embeddings                                                          |
+| **Route Management**        | Expressways & corridor tracking            | Distance, duration, risk profile, and assigned driver pilots                                                                        |
+| **Trip Telemetry**          | Session logs & attention scoring           | Tracks duration, % attentive, frame telemetry, safety rating                                                                        |
+| **Alert History**           | Incident audit log feed                    | Timestamped alerts with signals, duration, and severity level                                                                       |
+| **Safety Leaderboard**      | Driver ratings & ranking                   | 1–5 star ratings, 0–100 safety score, Gold/Silver badges                                                                          |
+| **Hybrid Database**         | Cloud sync with offline fallback           | **MongoDB Atlas** with seamless local **SQLite** fallback                                                               |
 
 ## Architecture
 
@@ -150,6 +150,7 @@ The setup script will:
 ## Usage
 
 CockpitSentinel offers two primary operational environments:
+
 1. **Universal Web Live Monitor (`/monitor`)**: A zero-installation web HUD that runs on **any browser, smartphone, tablet, or vehicle infotainment screen** with client-side MediaPipe FaceMesh and cloud YOLO11s inference.
 2. **In-Cabin Edge Python DMS (`cockpit-sentinel`)**: A high-throughput desktop application built for physical in-cabin computing units (Intel Core, NVIDIA Jetson, Raspberry Pi 5) using OpenVINO or TensorRT.
 
@@ -159,10 +160,15 @@ CockpitSentinel offers two primary operational environments:
 
 You can launch and operate the complete driver monitoring system from anywhere in the world on a mobile phone, tablet, or laptop browser without installing Python, CUDA, PyTorch, or OpenVINO on the client device.
 
-| Mode | URL | Best For |
-| :--- | :--- | :--- |
+| Mode                            | URL                                                                                                                         | Best For                                                      |
+| :------------------------------ | :-------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------ |
 | **Live Cloud Deployment** | **[https://cockpit-sentinel-dashboard.onrender.com/monitor](https://cockpit-sentinel-dashboard.onrender.com/monitor)** | Instant access from mobile phones, tablets, or remote laptops |
-| **Local Web Server** | **[http://localhost:8000/monitor](http://localhost:8000/monitor)** | Running on your local network or in-vehicle Wi-Fi router |
+| **Local Web Server**      | **[http://localhost:8000/monitor](http://localhost:8000/monitor)**                                                     | Running on your local network or in-vehicle Wi-Fi router      |
+
+> [!TIP]
+> **Running the Local Web Monitor:** To use `http://localhost:8000/monitor` locally, first start the dashboard server via `.\scripts\run_dashboard.ps1 -Monitor` (or `.\scripts\run_live_monitor.ps1 -Web`). If the server is not running, your browser will show `ERR_CONNECTION_REFUSED`.
+>
+> *(Note: Windows typically restricts a webcam to one application at a time; close the desktop OpenCV window before starting the browser monitor).*
 
 #### Pre-Trip Biometric Driver Scan & Calibration Workflow
 
@@ -367,17 +373,21 @@ CockpitSentinel is production-ready for deployment to cloud platforms at **zero 
 [Render](https://render.com) provides free container hosting with automated GitHub integration and free SSL certificates without requiring a credit card.
 
 #### Step 1: Push Repository to GitHub
+
 Ensure your repository is hosted on GitHub:
+
 ```powershell
 git push origin main
 ```
 
 #### Step 2: Create a Web Service on Render
+
 1. Sign in to the **[Render Dashboard](https://dashboard.render.com/)**.
 2. Click **New +** $\rightarrow$ **Web Service**.
 3. Select **Build and deploy from a Git repository** and connect your repository (`satyapal-19/CockpitSentinel`).
 
 #### Step 3: Configure Service Parameters
+
 - **Name**: `cockpit-sentinel-dashboard`
 - **Region**: Closest to your location (e.g., `Singapore` or `Frankfurt`)
 - **Branch**: `main`
@@ -385,17 +395,20 @@ git push origin main
 - **Instance Type**: **Free** (0.5 CPU, 512 MB RAM)
 
 #### Step 4: Configure Environment Variables
+
 In the **Environment Variables** section, add:
 
-| Key | Value | Purpose |
-| :--- | :--- | :--- |
-| `DATABASE_BACKEND` | `mongodb` | Connect to cloud MongoDB cluster |
-| `MONGODB_URI` | `mongodb+srv://<user>:<password>@cluster0.mongodb.net/cockpit_sentinel?retryWrites=true&w=majority` | MongoDB Atlas connection string |
-| `PORT` | `8000` | Port expected by Render proxy |
-| `DASHBOARD_PORT` | `8000` | Application bind port |
+| Key                  | Value                                                                                                 | Purpose                          |
+| :------------------- | :---------------------------------------------------------------------------------------------------- | :------------------------------- |
+| `DATABASE_BACKEND` | `mongodb`                                                                                           | Connect to cloud MongoDB cluster |
+| `MONGODB_URI`      | `mongodb+srv://<user>:<password>@cluster0.mongodb.net/cockpit_sentinel?retryWrites=true&w=majority` | MongoDB Atlas connection string  |
+| `PORT`             | `8000`                                                                                              | Port expected by Render proxy    |
+| `DASHBOARD_PORT`   | `8000`                                                                                              | Application bind port            |
 
 #### Step 5: Deploy & Access
+
 Click **Create Web Service**. Render builds the container and provisions your live application in ~3–4 minutes:
+
 - **Fleet Dashboard**: `https://cockpit-sentinel-dashboard.onrender.com/`
 - **Universal Web Live Monitor**: `https://cockpit-sentinel-dashboard.onrender.com/monitor`
 
@@ -409,6 +422,7 @@ Click **Create Web Service**. Render builds the container and provisions your li
 If you have an AWS account with the 12-month Free Tier:
 
 #### Step 1: Launch an EC2 Instance
+
 1. In AWS Console, launch an **Ubuntu 24.04 LTS** instance (`t2.micro` x86 or `t4g.small` ARM).
 2. Under **Security Groups**, allow inbound traffic on:
    - **Port 22** (SSH)
@@ -416,6 +430,7 @@ If you have an AWS account with the 12-month Free Tier:
    - **Port 80 / 443** (HTTP / HTTPS for SSL proxy)
 
 #### Step 2: Install Docker and Run
+
 Connect to your EC2 instance via SSH:
 
 ```bash
@@ -437,6 +452,7 @@ docker compose up -d --build
 ```
 
 #### Step 3: Enable Free Automated SSL with Caddy (Optional)
+
 To bind a custom domain or secure your EC2 IP with HTTPS:
 
 ```bash
@@ -444,11 +460,13 @@ sudo apt install -y caddy
 ```
 
 Add to `/etc/caddy/Caddyfile`:
+
 ```caddy
 your-domain.com {
     reverse_proxy localhost:8000
 }
 ```
+
 Reload Caddy: `sudo systemctl reload caddy`.
 
 ---
@@ -643,7 +661,43 @@ For machines with an NVIDIA GPU:
 .\scripts\setup_nvidia_environment.ps1 -TorchIndexUrl https://download.pytorch.org/whl/cu121
 ```
 
-See [`docs/setup/team-environment.md`](docs/setup/team-environment.md) for details.
+## ⚡ 1-Click Terminal Quick Start: Activate & Run Monitor
+
+Copy and paste these commands directly into your PowerShell terminal at the repository root:
+
+### 1. In-Cabin Edge Desktop Monitor (OpenCV GUI Window)
+Activates the virtual environment and immediately launches the real-time OpenCV desktop monitor with MediaPipe FaceMesh, YOLO11 phone detection, OpenVINO smoking detection, and Biometric Face ID:
+
+```powershell
+.\.venv\Scripts\Activate.ps1; .\scripts\run_webcam_monitor.ps1
+```
+*Or using the 1-click launcher:*
+```powershell
+.\scripts\run_live_monitor.ps1
+```
+
+> **Controls:** Click into the camera window and press **`Q`** or **`Esc`** to stop monitoring and save trip telemetry.
+
+---
+
+### 2. Universal Web Live Monitor (Chrome HUD at `http://localhost:8000/monitor`)
+Activates the virtual environment, launches the FastAPI server on port 8000, and immediately opens the In-Cabin Web HUD in Google Chrome:
+
+```powershell
+.\.venv\Scripts\Activate.ps1; .\scripts\run_dashboard.ps1 -Monitor
+```
+*Or using the 1-click launcher:*
+```powershell
+.\scripts\run_live_monitor.ps1 -Web
+```
+
+> [!IMPORTANT]
+> **Why Chrome says `ERR_CONNECTION_REFUSED`:**
+> `http://localhost:8000/monitor` requires the local FastAPI server to be running. If only the desktop OpenCV monitor was started, the web server is not running on port 8000. Use the Web Live Monitor command above.
+> 
+> **Camera Contention Notice:** Windows grants exclusive hardware lock on webcams. Do not run the OpenCV window and Chrome Web HUD simultaneously with the same camera index; close one before opening the other.
+
+---
 
 ## Team
 

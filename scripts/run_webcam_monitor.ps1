@@ -39,6 +39,9 @@ if (-not (Test-Path -LiteralPath $monScript)) {
 # 1. Best Phone Model: YOLO11 COCO (specialized in detecting the physical cell phone object)
 $phoneModel = Join-Path $repoRoot "yolo11n.pt"
 if (-not (Test-Path -LiteralPath $phoneModel)) {
+    $phoneModel = Join-Path $repoRoot "weights\pretrained\yolo11n.pt"
+}
+if (-not (Test-Path -LiteralPath $phoneModel)) {
     $phoneModel = "D:\CockpitSentinel\models\pretrained\yolov8n.pt"
 }
 
