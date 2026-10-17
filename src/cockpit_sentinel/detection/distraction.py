@@ -82,8 +82,34 @@ def load_distraction_config(path: Path) -> DistractionConfig:
 
 
 DEFAULT_PHONE_LABELS = frozenset(
-    {"cell phone", "phone", "using_phone", "mobile_phone", "calling", "texting"}
+    {"cell phone", "phone", "using_phone", "mobile_phone", "calling", "texting", "remote"}
 )
+
+COCO_CLASSES: dict[int, str] = {
+    0: "person", 1: "bicycle", 2: "car", 3: "motorcycle", 4: "airplane", 5: "bus",
+    6: "train", 7: "truck", 8: "boat", 9: "traffic light", 10: "fire hydrant",
+    11: "stop sign", 12: "parking meter", 13: "bench", 14: "bird", 15: "cat",
+    16: "dog", 17: "horse", 18: "sheep", 19: "cow", 20: "elephant", 21: "bear",
+    22: "zebra", 23: "giraffe", 24: "backpack", 25: "umbrella", 26: "handbag",
+    27: "tie", 28: "suitcase", 29: "frisbee", 30: "skis", 31: "snowboard",
+    32: "sports ball", 33: "kite", 34: "baseball bat", 35: "baseball glove",
+    36: "skateboard", 37: "surfboard", 38: "tennis racket", 39: "bottle",
+    40: "wine glass", 41: "cup", 42: "fork", 43: "knife", 44: "spoon", 45: "bowl",
+    46: "banana", 47: "apple", 48: "sandwich", 49: "orange", 50: "broccoli",
+    51: "carrot", 52: "hot dog", 53: "pizza", 54: "donut", 55: "cake", 56: "chair",
+    57: "couch", 58: "potted plant", 59: "bed", 60: "dining table", 61: "toilet",
+    62: "tv", 63: "laptop", 64: "mouse", 65: "remote", 66: "keyboard",
+    67: "cell phone", 68: "microwave", 69: "oven", 70: "toaster", 71: "sink",
+    72: "refrigerator", 73: "book", 74: "clock", 75: "vase", 76: "scissors",
+    77: "teddy bear", 78: "hair drier", 79: "toothbrush",
+}
+
+DISTRACTION_CLASSES: dict[int, str] = {
+    0: "earphone",
+    1: "person",
+    2: "smoke",
+    3: "using_phone",
+}
 
 
 @dataclass(slots=True)
@@ -102,18 +128,28 @@ class _OnnxResult:
 class OnnxYOLO11Detector:
     """Sub-100ms ultra-low memory YOLO11 distraction detector using OpenCV DNN."""
 
-    def __init__(self, onnx_path: Path) -> None:
+    def __init__(self, onnx_path: Path, names: dict[int, str] | None = None) -> None:
         if not onnx_path.exists():
             raise FileNotFoundError(f"ONNX model was not found: {onnx_path}")
         self.net = cv2.dnn.readNetFromONNX(str(onnx_path))
-        self.names = {0: "earphone", 1: "person", 2: "smoke", 3: "using_phone"}
+        self.names = names
 
     def __call__(self, frame: np.ndarray, conf: float = 0.25, **kwargs: Any) -> list[Any]:
         h, w = frame.shape[:2]
         blob = cv2.dnn.blobFromImage(frame, 1.0 / 255.0, (640, 640), swapRB=True)
         self.net.setInput(blob)
-        out = self.net.forward()  # (1, 8, 8400)
-        preds = out[0].T  # (8400, 8)
+        out = self.net.forward()  # e.g. (1, 8, 8400) or (1, 84, 8400)
+        preds = out[0].T
+
+        num_classes = preds.shape[1] - 4
+        if self.names is not None:
+            active_names = self.names
+        elif num_classes == 80:
+            active_names = COCO_CLASSES
+        elif num_classes == 4:
+            active_names = DISTRACTION_CLASSES
+        else:
+            active_names = {i: f"class_{i}" for i in range(num_classes)}
 
         scores = preds[:, 4:]
         class_ids = np.argmax(scores, axis=1)
@@ -121,7 +157,7 @@ class OnnxYOLO11Detector:
 
         mask = confidences >= conf
         if not np.any(mask):
-            return [_OnnxResult(boxes=[], names=self.names)]
+            return [_OnnxResult(boxes=[], names=active_names)]
 
         f_boxes = preds[:, :4][mask]
         f_confs = confidences[mask]
@@ -157,7 +193,7 @@ class OnnxYOLO11Detector:
                     )
                 )
 
-        return [_OnnxResult(boxes=boxes_out, names=self.names)]
+        return [_OnnxResult(boxes=boxes_out, names=active_names)]
 
 
 class DistractionDetector:
@@ -232,21 +268,38 @@ class DistractionDetector:
                 min_confidence=self.config.smoking_confidence_threshold,
             )
         else:
-            # Dual model pass (legacy separate phone + YOLO-World smoking)
-            phone_confidence, phone_boxes = _extract_detections(
-                self._phone_model(
-                    frame, conf=self.config.phone_confidence_threshold, **predict_kwargs
-                ),
+            # Dual model pass (phone model + smoking/distraction model)
+            phone_res = self._phone_model(
+                frame, conf=self.config.phone_confidence_threshold, **predict_kwargs
+            )
+            phone_conf_1, phone_boxes_1 = _extract_detections(
+                phone_res,
                 DEFAULT_PHONE_LABELS,
                 frame_shape=frame.shape[:2],
+                min_confidence=self.config.phone_confidence_threshold,
+            )
+
+            smoke_res = self._smoking_model(
+                frame, conf=self.config.smoking_confidence_threshold, **predict_kwargs
             )
             smoking_confidence, smoking_boxes = _extract_detections(
-                self._smoking_model(
-                    frame, conf=self.config.smoking_confidence_threshold, **predict_kwargs
-                ),
+                smoke_res,
                 smoking_targets,
                 frame_shape=frame.shape[:2],
+                min_confidence=self.config.smoking_confidence_threshold,
             )
+
+            # Also inspect smoking/distraction model for phone signals (e.g. using_phone)
+            phone_conf_2, phone_boxes_2 = _extract_detections(
+                smoke_res,
+                DEFAULT_PHONE_LABELS,
+                frame_shape=frame.shape[:2],
+                min_confidence=self.config.phone_confidence_threshold,
+            )
+
+            valid_confs = [c for c in (phone_conf_1, phone_conf_2) if c is not None]
+            phone_confidence = max(valid_confs, default=None)
+            phone_boxes = phone_boxes_1 + phone_boxes_2
 
         return DistractionAnalysis(
             signals=DriverSignals(
@@ -275,6 +328,8 @@ class DistractionDetector:
     def _load_smoking_model(self, path: Path, device: str | None = None) -> Any:
         if not path.exists():
             raise FileNotFoundError(f"Smoking detection model was not found: {path}")
+        if path.suffix.lower() == ".onnx":
+            return OnnxYOLO11Detector(path)
         if "world" in str(path).lower():
             model = YOLOWorld(path)
             with contextlib.suppress(Exception):
@@ -339,7 +394,9 @@ def _extract_detections(
             if highest is None or confidence > highest:
                 highest = confidence
 
-            detections.append(DetectionBox(box=coords, label=raw_label, confidence=confidence))
+            # Normalize "remote" (often predicted by COCO on rear multi-lens smartphone bodies) to "phone"
+            display_label = "phone" if raw_label.casefold() == "remote" else raw_label
+            detections.append(DetectionBox(box=coords, label=display_label, confidence=confidence))
 
     return highest, detections
 

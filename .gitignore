@@ -71,6 +71,9 @@ ppt_background_template.png
 
 # Weights directory (large raw models ignored, trained light distraction models whitelisted for cloud deployment)
 weights/*
+!weights/pretrained/
+weights/pretrained/*
+!weights/pretrained/yolo11n.onnx
 !weights/trained/
 weights/trained/*
 !weights/trained/yolo11s_distraction/

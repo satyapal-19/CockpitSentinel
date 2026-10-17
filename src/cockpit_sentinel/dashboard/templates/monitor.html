@@ -544,11 +544,11 @@
     // AUTOMATIC BIOMETRIC IN-CABIN FACE IDENTIFICATION & PROFILE CALIBRATION
     // =========================================================================
     async function scanInCabinFaceBiometrics() {
-      if (!isRunning || isFaceCheckInFlight) return;
+      // Once driver profile is confirmed, stop checking continuously during the trip
+      if (!isRunning || verifiedDriver || isFaceCheckInFlight) return;
       const now = performance.now();
-      // Check every 4 seconds until verified, then every 30 seconds for maintenance
-      const interval = verifiedDriver ? 30000 : 4000;
-      if (now - lastFaceCheck < interval) return;
+      // Only poll if driver is still unverified guest (at most once every 10 seconds)
+      if (now - lastFaceCheck < 10000) return;
       lastFaceCheck = now;
       isFaceCheckInFlight = true;
 
@@ -611,18 +611,29 @@
         document.getElementById('ear-threshold').innerText = `≥ 0.22`;
         document.getElementById('mar-threshold').innerText = `≤ 0.60`;
         document.getElementById('yaw-threshold').innerText = `±30°`;
+        const badge = document.getElementById('pilot-badge');
+        const badgeText = document.getElementById('pilot-badge-text');
+        badge.className = "hud-card px-3 py-1 rounded-xl border border-amber-500/40 flex items-center space-x-2 text-xs mono bg-amber-950/30";
+        badgeText.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400"></span> <span class="text-amber-300">GUEST DRIVER (DEFAULT THRESHOLDS)</span>`;
         return;
       }
       const match = enrolledDrivers.find(d => d.id === selectedId);
-      if (match && match.thresholds) {
+      if (match) {
         verifiedDriver = match;
-        const t = match.thresholds;
-        thresholdEar = Number(t.eye_aspect_ratio_threshold) || 0.22;
-        thresholdMar = Number(t.mouth_aspect_ratio_threshold) || 0.60;
-        thresholdYaw = Number(t.head_yaw_threshold_degrees) || 30.0;
-        document.getElementById('ear-threshold').innerText = `≥ ${thresholdEar.toFixed(2)}`;
-        document.getElementById('mar-threshold').innerText = `≤ ${thresholdMar.toFixed(2)}`;
-        document.getElementById('yaw-threshold').innerText = `±${thresholdYaw.toFixed(0)}°`;
+        const badge = document.getElementById('pilot-badge');
+        const badgeText = document.getElementById('pilot-badge-text');
+        badge.className = "hud-card px-3 py-1 rounded-xl border border-emerald-500/50 flex items-center space-x-2 text-xs mono bg-emerald-950/40";
+        badgeText.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> <span class="text-emerald-400 font-bold">${match.name.toUpperCase()} [CONFIRMED]</span>`;
+
+        if (match.thresholds) {
+          const t = match.thresholds;
+          thresholdEar = Number(t.eye_aspect_ratio_threshold) || 0.22;
+          thresholdMar = Number(t.mouth_aspect_ratio_threshold) || 0.60;
+          thresholdYaw = Number(t.head_yaw_threshold_degrees) || 30.0;
+          document.getElementById('ear-threshold').innerText = `≥ ${thresholdEar.toFixed(2)}`;
+          document.getElementById('mar-threshold').innerText = `≤ ${thresholdMar.toFixed(2)}`;
+          document.getElementById('yaw-threshold').innerText = `±${thresholdYaw.toFixed(0)}°`;
+        }
       }
     }
 
@@ -651,9 +662,12 @@
       canvasCtx.drawImage(results.image, 0, 0, w, h);
       canvasCtx.restore();
 
-      // Trigger asynchronous distraction & face recognition polling
+      // Trigger asynchronous distraction polling
       pollDistractionModel();
-      scanInCabinFaceBiometrics();
+      // Only scan face biometrics if initial profile is not yet confirmed
+      if (!verifiedDriver) {
+        scanInCabinFaceBiometrics();
+      }
 
       // Draw active YOLO Bounding Boxes onto canvas
       if (activeDetections && activeDetections.length > 0) {

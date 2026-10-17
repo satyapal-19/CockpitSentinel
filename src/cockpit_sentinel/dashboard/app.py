@@ -483,23 +483,32 @@ _distraction_detector = None
 def get_distraction_detector():
     global _distraction_detector
     if _distraction_detector is None:
-        candidate_paths = [
-            Path("weights/trained/yolo11s_balanced_distraction/best.onnx"),
-            Path("weights/trained/yolo11s_distraction/best.onnx"),
-            Path(__file__).resolve().parents[3] / "weights" / "trained" / "yolo11s_balanced_distraction" / "best.onnx",
-            Path(__file__).resolve().parents[3] / "weights" / "trained" / "yolo11s_distraction" / "best.onnx",
-            Path("weights/trained/yolo11s_balanced_distraction/best.pt"),
-            Path("weights/trained/yolo11s_distraction/best.pt"),
-            Path(__file__).resolve().parents[3] / "weights" / "trained" / "yolo11s_balanced_distraction" / "best.pt",
-            Path(__file__).resolve().parents[3] / "weights" / "trained" / "yolo11s_distraction" / "best.pt",
+        root_dir = Path(__file__).resolve().parents[3]
+        phone_candidates = [
+            Path("weights/pretrained/yolo11n.onnx"),
+            root_dir / "weights" / "pretrained" / "yolo11n.onnx",
+            Path("weights/pretrained/yolo11s.onnx"),
+            root_dir / "weights" / "pretrained" / "yolo11s.onnx",
+            Path("weights/pretrained/yolo11n.pt"),
+            root_dir / "weights" / "pretrained" / "yolo11n.pt",
+            Path("weights/pretrained/yolo11s.pt"),
+            root_dir / "weights" / "pretrained" / "yolo11s.pt",
         ]
-        found_path = None
-        for p in candidate_paths:
-            if p.exists():
-                found_path = p
-                break
+        smoking_candidates = [
+            Path("weights/trained/yolo11s_balanced_distraction/best.onnx"),
+            root_dir / "weights" / "trained" / "yolo11s_balanced_distraction" / "best.onnx",
+            Path("weights/trained/yolo11s_distraction/best.onnx"),
+            root_dir / "weights" / "trained" / "yolo11s_distraction" / "best.onnx",
+            Path("weights/trained/yolo11s_balanced_distraction/best.pt"),
+            root_dir / "weights" / "trained" / "yolo11s_balanced_distraction" / "best.pt",
+            Path("weights/trained/yolo11s_distraction/best.pt"),
+            root_dir / "weights" / "trained" / "yolo11s_distraction" / "best.pt",
+        ]
 
-        if found_path:
+        found_phone = next((p for p in phone_candidates if p.exists()), None)
+        found_smoking = next((p for p in smoking_candidates if p.exists()), None)
+
+        if found_phone or found_smoking:
             try:
                 from cockpit_sentinel.detection.distraction import DistractionConfig, DistractionDetector
 
@@ -508,8 +517,25 @@ def get_distraction_detector():
                     smoking_confidence_threshold=0.25,
                     smoking_labels=("smoke", "cigarette", "smoking", "vape"),
                 )
-                _distraction_detector = DistractionDetector(found_path, config=cfg, device="cpu")
-                print(f"[DISTRACTION DETECTOR] Initialized model from: {found_path}")
+                if found_phone and found_smoking:
+                    _distraction_detector = DistractionDetector(
+                        phone_model_path=found_phone,
+                        smoking_model_path=found_smoking,
+                        config=cfg,
+                        device="cpu",
+                    )
+                    print(
+                        f"[DISTRACTION DETECTOR] Dual model initialized: "
+                        f"phone={found_phone.name}, smoking={found_smoking.name}"
+                    )
+                else:
+                    active_path = found_phone or found_smoking
+                    _distraction_detector = DistractionDetector(
+                        phone_model_path=active_path,
+                        config=cfg,
+                        device="cpu",
+                    )
+                    print(f"[DISTRACTION DETECTOR] Single model initialized from: {active_path}")
             except Exception as e:
                 print(f"[DISTRACTION DETECTOR] Initialization error: {e}")
                 _distraction_detector = None
