@@ -33,19 +33,20 @@ WORKDIR /app
 COPY requirements-cloud.txt pyproject.toml ./
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir -r requirements-cloud.txt
+    pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements-cloud.txt
 
 # Pre-cache FaceNet weights and export lightweight ONNX for sub-100ms low-memory CPU inference
 RUN mkdir -p /root/.cache/torch/checkpoints /root/.cache/torch/hub/checkpoints /app/weights/pretrained && \
     curl -fSL -o /root/.cache/torch/checkpoints/20180402-114759-vggface2.pt \
     https://github.com/timesler/facenet-pytorch/releases/download/v2.2.9/20180402-114759-vggface2.pt && \
     cp /root/.cache/torch/checkpoints/20180402-114759-vggface2.pt /root/.cache/torch/hub/checkpoints/20180402-114759-vggface2.pt && \
-    python -c "import torch; from facenet_pytorch import InceptionResnetV1; m=InceptionResnetV1(pretrained='vggface2').eval(); torch.onnx.export(m, torch.randn(1,3,160,160), '/app/weights/pretrained/facenet.onnx', opset_version=14, dynamo=False)"
+    python -c "import torch; from facenet_pytorch import InceptionResnetV1; m=InceptionResnetV1(pretrained='vggface2').eval(); d=torch.randn(1,3,160,160); p='/app/weights/pretrained/facenet.onnx'; exec('try:\n torch.onnx.export(m, d, p, opset_version=14, dynamo=False)\nexcept TypeError:\n torch.onnx.export(m, d, p, opset_version=14)')"
 
 # Copy application source code, configs, templates, and evaluation reports
 COPY src/ ./src/
 COPY configs/ ./configs/
 COPY test_reports/ ./test_reports/
+COPY weights/pretrained/yolo11n.onnx ./weights/pretrained/yolo11n.onnx
 COPY weights/trained/yolo11s_distraction/best.pt ./weights/trained/yolo11s_distraction/best.pt
 COPY weights/trained/yolo11s_balanced_distraction/best.pt ./weights/trained/yolo11s_balanced_distraction/best.pt
 COPY weights/trained/yolo11s_balanced_distraction/best.onnx ./weights/trained/yolo11s_balanced_distraction/best.onnx
