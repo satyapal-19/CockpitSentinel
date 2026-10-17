@@ -663,18 +663,22 @@ For machines with an NVIDIA GPU:
 
 ## ⚡ 1-Click Terminal Quick Start: Activate & Run Monitor
 
-Copy and paste these commands directly into your PowerShell terminal at the repository root:
+You can launch CockpitSentinel directly from either **Command Prompt (CMD)** or **PowerShell**:
 
 ### 1. In-Cabin Edge Desktop Monitor (OpenCV GUI Window)
-Activates the virtual environment and immediately launches the real-time OpenCV desktop monitor with MediaPipe FaceMesh, YOLO11 phone detection, OpenVINO smoking detection, and Biometric Face ID:
+Activates the virtual environment and immediately launches the real-time OpenCV desktop monitor with MediaPipe FaceMesh, YOLO11 phone detection, distraction detection, and Biometric Face ID:
 
-```powershell
-.\.venv\Scripts\Activate.ps1; .\scripts\run_webcam_monitor.ps1
+**If you are using Command Prompt (`cmd.exe`):**
+```cmd
+.\scripts\run_webcam_monitor.bat
 ```
-*Or using the 1-click launcher:*
+*(or direct: `.\.venv\Scripts\python.exe scripts\run_drowsiness_monitor.py --source 0`)*
+
+**If you are using PowerShell (`pwsh`):**
 ```powershell
 .\scripts\run_live_monitor.ps1
 ```
+*(or: `.\.venv\Scripts\Activate.ps1; .\scripts\run_webcam_monitor.ps1`)*
 
 > **Controls:** Click into the camera window and press **`Q`** or **`Esc`** to stop monitoring and save trip telemetry.
 
@@ -683,13 +687,19 @@ Activates the virtual environment and immediately launches the real-time OpenCV 
 ### 2. Universal Web Live Monitor (Chrome HUD at `http://localhost:8000/monitor`)
 Activates the virtual environment, launches the FastAPI server on port 8000, and immediately opens the In-Cabin Web HUD in Google Chrome:
 
-```powershell
-.\.venv\Scripts\Activate.ps1; .\scripts\run_dashboard.ps1 -Monitor
+**If you are using Command Prompt (`cmd.exe`):**
+```cmd
+.\scripts\run_live_monitor.bat -Web
 ```
-*Or using the 1-click launcher:*
+
+**If you are using PowerShell (`pwsh`):**
 ```powershell
 .\scripts\run_live_monitor.ps1 -Web
 ```
+
+> [!NOTE]
+> **Why did running `.ps1` open Notepad?**
+> On Windows, running a `.ps1` file inside **Command Prompt (CMD)** causes Windows to open the script in Notepad instead of executing it. In Command Prompt, use the `.bat` scripts (`.\scripts\run_webcam_monitor.bat` or `.\scripts\run_live_monitor.bat`) or prefix with `powershell -ExecutionPolicy Bypass -File .\scripts\run_webcam_monitor.ps1`.
 
 > [!IMPORTANT]
 > **Why Chrome says `ERR_CONNECTION_REFUSED`:**
