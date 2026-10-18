@@ -24,8 +24,6 @@ from reportlab.platypus import (
 )
 
 
-
-
 def get_styles():
     styles = getSampleStyleSheet()
     
