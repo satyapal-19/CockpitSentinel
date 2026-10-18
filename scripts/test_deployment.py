@@ -14,12 +14,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-import json
 
 
 def print_banner(url: str) -> None:
@@ -27,7 +27,7 @@ def print_banner(url: str) -> None:
     print("      COCKPITSENTINEL CLOUD DEPLOYMENT VERIFICATION TEST")
     print("=" * 65)
     print(f" Target Endpoint : {url}")
-    print(f" Timestamp       : {datetime.now(timezone.utc).isoformat()}")
+    print(f" Timestamp       : {datetime.now(UTC).isoformat()}")
     print("=" * 65 + "\n")
 
 
@@ -124,8 +124,8 @@ def run_tests(base_url: str) -> bool:
         "driver_name": "Cloud Deployment Test Pilot",
         "route_id": "test-corridor",
         "route_name": "Verification Highway Loop",
-        "start_time": datetime.now(timezone.utc).isoformat(),
-        "end_time": datetime.now(timezone.utc).isoformat(),
+        "start_time": datetime.now(UTC).isoformat(),
+        "end_time": datetime.now(UTC).isoformat(),
         "duration_seconds": 120.0,
         "attentive_seconds": 112.5,
         "inattentive_seconds": 7.5,
@@ -153,7 +153,7 @@ def run_tests(base_url: str) -> bool:
         "driver_id": "test-pilot-01",
         "driver_name": "Cloud Deployment Test Pilot",
         "route_name": "Verification Highway Loop",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "risk_level": "warning",
         "risk_score": 5,
         "active_signals": ["phone_detected", "looking_away"],

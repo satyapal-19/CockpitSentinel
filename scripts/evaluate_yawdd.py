@@ -16,8 +16,6 @@ Computes:
 from __future__ import annotations
 
 import argparse
-import sys
-import time
 from pathlib import Path
 from typing import Any
 
@@ -94,7 +92,6 @@ def evaluate_yawdd(
         if not cap.isOpened():
             continue
 
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         frame_idx = 0
         vid_mar_list = []
         yawn_frames_in_vid = 0

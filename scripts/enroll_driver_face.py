@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import time
 from pathlib import Path
 
 import cv2
@@ -14,8 +13,8 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from cockpit_sentinel.database.client import get_db_manager
-from cockpit_sentinel.recognition.face_identifier import get_face_identifier
+from cockpit_sentinel.database.client import get_db_manager  # noqa: E402
+from cockpit_sentinel.recognition.face_identifier import get_face_identifier  # noqa: E402
 
 
 def enroll_from_image(driver_id: str, image_path: Path) -> None:
@@ -63,11 +62,11 @@ def enroll_from_webcam(driver_id: str, camera_index: int = 0) -> None:
         sys.exit(1)
 
     window_name = f"CockpitSentinel — Face Enrollment: {driver.name}"
-    print(f"\n============================================================")
+    print("\n============================================================")
     print(f" Enrolling Driver Face: {driver.name} ({driver.license_number})")
-    print(f" Look directly into camera. Press 'SPACE' to capture samples.")
-    print(f" Press 'Q' or 'Esc' to cancel.")
-    print(f"============================================================\n")
+    print(" Look directly into camera. Press 'SPACE' to capture samples.")
+    print(" Press 'Q' or 'Esc' to cancel.")
+    print("============================================================\n")
 
     captured_frames: list[np.ndarray] = []
     capture_samples_count = 5
@@ -128,9 +127,9 @@ def enroll_from_webcam(driver_id: str, camera_index: int = 0) -> None:
         print("Computing and averaging 512-D biometric embeddings...")
         updated_driver = identifier.enroll_driver_face(driver, captured_frames)
         db.save_driver(updated_driver)
-        print(f"\n[SUCCESS] Driver facial profile successfully saved to database!")
+        print("\n[SUCCESS] Driver facial profile successfully saved to database!")
         print(f"Driver Name: {updated_driver.name}")
-        print(f"Status: Face Enrolled (Autonomous Cabin Profile Switch Enabled)")
+        print("Status: Face Enrolled (Autonomous Cabin Profile Switch Enabled)")
 
     finally:
         cap.release()

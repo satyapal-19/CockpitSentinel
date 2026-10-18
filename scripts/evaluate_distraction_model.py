@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -47,8 +46,6 @@ def evaluate_distraction_model(
         plots=False,
     )
 
-    present_indices = [i for i in range(len(model.names)) if i in metrics.box.ap_class_index] if hasattr(metrics.box, 'ap_class_index') else list(range(len(metrics.box.p)))
-    
     class_metrics = {}
     for list_idx, cls_id in enumerate(metrics.box.ap_class_index if hasattr(metrics.box, 'ap_class_index') else range(len(metrics.box.p))):
         c_name = model.names.get(int(cls_id), f"class_{cls_id}")

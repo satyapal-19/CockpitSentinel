@@ -13,7 +13,6 @@ import os
 import sys
 from pathlib import Path
 
-
 DEFAULT_OUTPUT_DIR = Path("data/external/distraction_phone_smoking")
 
 # Curated high-quality public Roboflow Universe datasets for driver distraction:
@@ -47,7 +46,7 @@ def download_from_roboflow(
         sys.exit(1)
 
     info = RECOMMENDED_DATASETS.get(dataset_key, RECOMMENDED_DATASETS["driver_distraction"])
-    print(f"\n[INFO] Connecting to Roboflow Universe...")
+    print("\n[INFO] Connecting to Roboflow Universe...")
     print(f"       Project: {info['workspace']}/{info['project']} (v{info['version']})")
     print(f"       Purpose: {info['description']}")
 
@@ -131,10 +130,10 @@ def main() -> None:
         print("=" * 60)
         print("1. Get your free API key at: https://app.roboflow.com")
         print("2. Run:")
-        print(f"   python scripts/download_distraction_dataset.py --api-key YOUR_KEY")
+        print("   python scripts/download_distraction_dataset.py --api-key YOUR_KEY")
         print("   OR export ROBOFLOW_API_KEY=YOUR_KEY")
         print("\nAlternatively, download manually via browser from:")
-        for k, v in RECOMMENDED_DATASETS.items():
+        for v in RECOMMENDED_DATASETS.values():
             print(f"  - https://universe.roboflow.com/{v['workspace']}/{v['project']}")
         print(f"and unzip into: {args.output_dir.resolve()}\n")
         return

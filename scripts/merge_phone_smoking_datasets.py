@@ -26,7 +26,6 @@ from typing import Any
 
 import yaml
 
-
 STANDARD_NAMES = ["earphone", "person", "smoke", "using_phone"]
 STANDARD_MAP = {
     "earphone": 0,
@@ -89,7 +88,7 @@ def merge_split(
             continue
 
         with lbl_path.open("r", encoding="utf-8") as f:
-            lines = [l.strip().split() for l in f.readlines() if l.strip()]
+            lines = [line.strip().split() for line in f.readlines() if line.strip()]
 
         remapped_lines = []
         for parts in lines:

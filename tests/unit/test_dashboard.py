@@ -94,6 +94,7 @@ def test_api_drivers_crud(client: TestClient):
     res_del = client.delete(f"/api/drivers/{driver_id}")
     assert res_del.status_code == 200
     assert res_del.json()["deleted"] is True
+    assert len(client.get("/api/drivers").json()) == initial_count
 
 
 def test_api_routes_crud(client: TestClient):
@@ -135,6 +136,7 @@ def test_api_trips_and_alerts_endpoints(client: TestClient):
 
 def test_api_face_enroll_and_identify(client: TestClient):
     import base64
+
     import cv2
     import numpy as np
 

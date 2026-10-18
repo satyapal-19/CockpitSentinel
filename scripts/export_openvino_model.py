@@ -17,10 +17,8 @@ from ultralytics import YOLO
 
 def export_and_benchmark(model_path: Path, half: bool = True) -> Path:
     """Export YOLO model to OpenVINO format and benchmark speedup."""
-    if not model_path.exists():
-        # If it's a known standard model name like yolo11s.pt, ultralytics will auto-download
-        if not model_path.name.endswith(".pt"):
-            raise FileNotFoundError(f"Model file not found: {model_path}")
+    if not model_path.exists() and not model_path.name.endswith(".pt"):
+        raise FileNotFoundError(f"Model file not found: {model_path}")
 
     print("\n" + "=" * 65)
     print("  COCKPIT SENTINEL — INTEL OPENVINO EXPORT & BENCHMARK")

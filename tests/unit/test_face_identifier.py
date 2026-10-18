@@ -9,10 +9,12 @@ import cv2
 import numpy as np
 import pytest
 
-from cockpit_sentinel.database.models import DriverProfile, DriverThresholds
+from cockpit_sentinel.database.models import DriverProfile
 from cockpit_sentinel.recognition import FaceIdentifier, compute_similarity, get_face_identifier
 
-SAMPLE_FACE_PATH = Path("data/external/nthu/train/notdrowsy/001_glasses_nonsleepyCombination_0_notdrowsy.jpg")
+SAMPLE_FACE_PATH = Path(
+    "data/external/nthu/train/notdrowsy/001_glasses_nonsleepyCombination_0_notdrowsy.jpg"
+)
 
 
 def test_compute_similarity_identical_vectors():

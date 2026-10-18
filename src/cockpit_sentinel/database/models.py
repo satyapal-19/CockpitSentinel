@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 def get_current_iso_time() -> str:
     """Return ISO 8601 UTC formatted string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class DriverThresholds(BaseModel):

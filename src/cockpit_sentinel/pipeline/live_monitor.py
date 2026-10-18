@@ -7,9 +7,9 @@ import os
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import cv2
 import numpy as np
@@ -325,7 +325,7 @@ class LiveMonitor:
             return
 
         if hasattr(self._detector, "config"):
-            current_cfg = getattr(self._detector, "config")
+            current_cfg = self._detector.config
             min_frames = getattr(current_cfg, "minimum_consecutive_frames", 3)
             self._detector.config = DrowsinessConfig(
                 eye_aspect_ratio_threshold=t.eye_aspect_ratio_threshold,
@@ -335,7 +335,7 @@ class LiveMonitor:
             )
 
         if self._distraction_detector is not None and hasattr(self._distraction_detector, "config"):
-            current_d_cfg = getattr(self._distraction_detector, "config")
+            current_d_cfg = self._distraction_detector.config
             smoking_labels = getattr(
                 current_d_cfg, "smoking_labels", ("cigarette", "smoking", "smoke")
             )
@@ -641,7 +641,7 @@ def run_live_monitor(
     session_alerts_count = 0
     last_alert_time = 0.0
     trip_id = f"trp-{int(time.time())}"
-    trip_start_iso = datetime.now(timezone.utc).isoformat()
+    trip_start_iso = datetime.now(UTC).isoformat()
 
     default_drowsiness_config = getattr(detector, "config", None)
     default_distraction_config = (
@@ -810,80 +810,80 @@ def run_live_monitor(
             if (
                 db
                 and processed.assessment.level in (RiskLevel.WARNING, RiskLevel.CRITICAL)
+                and (now - last_alert_time >= 3.5)
             ):
-                if now - last_alert_time >= 3.5:
-                    last_alert_time = now
-                    session_alerts_count += 1
-                    try:
-                        active_sigs = [
-                            s
-                            for s in (
-                                "eyes_closed",
-                                "yawning",
-                                "looking_away",
-                                "phone_detected",
-                                "smoking_detected",
-                            )
-                            if getattr(processed.analysis.signals, s, False)
-                            or (
-                                processed.distraction
-                                and getattr(processed.distraction.signals, s, False)
-                            )
-                        ]
-                        dur = 1.0
-                        if processed.active_durations:
-                            dur = max(processed.active_durations.values()) or 1.0
-
-                        log_drv_id = (
-                            driver_profile.id
-                            if driver_profile
-                            else (expected_driver.id if expected_driver else "unverified-guest")
+                last_alert_time = now
+                session_alerts_count += 1
+                try:
+                    active_sigs = [
+                        s
+                        for s in (
+                            "eyes_closed",
+                            "yawning",
+                            "looking_away",
+                            "phone_detected",
+                            "smoking_detected",
                         )
-                        log_drv_name = (
-                            driver_profile.name
-                            if driver_profile
-                            else (
-                                f"UNVERIFIED (Exp: {expected_driver.name})"
-                                if expected_driver
-                                else "Guest Driver"
+                        if getattr(processed.analysis.signals, s, False)
+                        or (
+                            processed.distraction
+                            and getattr(processed.distraction.signals, s, False)
+                        )
+                    ]
+                    dur = 1.0
+                    if processed.active_durations:
+                        dur = max(processed.active_durations.values()) or 1.0
+
+                    log_drv_id = (
+                        driver_profile.id
+                        if driver_profile
+                        else (expected_driver.id if expected_driver else "unverified-guest")
+                    )
+                    log_drv_name = (
+                        driver_profile.name
+                        if driver_profile
+                        else (
+                            f"UNVERIFIED (Exp: {expected_driver.name})"
+                            if expected_driver
+                            else "Guest Driver"
+                        )
+                    )
+
+                    incident = AlertIncident(
+                        trip_id=trip_id,
+                        driver_id=log_drv_id,
+                        driver_name=log_drv_name,
+                        route_name=route_obj.route_name
+                        if route_obj
+                        else "Active Highway Corridor",
+                        timestamp=datetime.now(UTC).isoformat(),
+                        risk_level=processed.assessment.level.value,
+                        risk_score=processed.assessment.score,
+                        active_signals=active_sigs,
+                        duration_seconds=round(dur, 1),
+                        notes=f"Triggered by: {', '.join(processed.assessment.reasons) or 'driver distraction'}",
+                    )
+                    if db:
+                        db.save_alert(incident)
+
+                    if cloud_url:
+                        try:
+                            import json
+                            from urllib.request import Request, urlopen
+
+                            payload = json.dumps(incident.to_dict()).encode("utf-8")
+                            req = Request(
+                                f"{cloud_url.rstrip('/')}/api/alerts",
+                                data=payload,
+                                headers={"Content-Type": "application/json"},
+                                method="POST",
                             )
-                        )
-
-                        incident = AlertIncident(
-                            trip_id=trip_id,
-                            driver_id=log_drv_id,
-                            driver_name=log_drv_name,
-                            route_name=route_obj.route_name
-                            if route_obj
-                            else "Active Highway Corridor",
-                            timestamp=datetime.now(timezone.utc).isoformat(),
-                            risk_level=processed.assessment.level.value,
-                            risk_score=processed.assessment.score,
-                            active_signals=active_sigs,
-                            duration_seconds=round(dur, 1),
-                            notes=f"Triggered by: {', '.join(processed.assessment.reasons) or 'driver distraction'}",
-                        )
-                        if db:
-                            db.save_alert(incident)
-
-                        if cloud_url:
-                            try:
-                                import json
-                                from urllib.request import Request, urlopen
-
-                                payload = json.dumps(incident.to_dict()).encode("utf-8")
-                                req = Request(
-                                    f"{cloud_url.rstrip('/')}/api/alerts",
-                                    data=payload,
-                                    headers={"Content-Type": "application/json"},
-                                    method="POST",
-                                )
-                                with urlopen(req, timeout=2.0):
-                                    pass
-                            except Exception:
+                            with urlopen(req, timeout=2.0):
                                 pass
-                    except Exception:
-                        pass
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
 
             if not headless:
                 cv2.imshow(WINDOW_TITLE, processed.image)
@@ -931,7 +931,7 @@ def run_live_monitor(
                         route_id=route_obj.id if route_obj else None,
                         route_name=route_obj.route_name if route_obj else "Direct Transit",
                         start_time=trip_start_iso,
-                        end_time=datetime.now(timezone.utc).isoformat(),
+                        end_time=datetime.now(UTC).isoformat(),
                         duration_seconds=round(stats.total_seconds, 1),
                         attentive_seconds=round(stats.attentive_seconds, 1),
                         inattentive_seconds=round(stats.inattentive_seconds, 1),

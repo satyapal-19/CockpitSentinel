@@ -9,17 +9,13 @@ Creates:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import inch
 from reportlab.platypus import (
     HRFlowable,
-    KeepTogether,
-    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -28,8 +24,6 @@ from reportlab.platypus import (
 )
 
 
-class NumberedCanvas(canvas.Canvas if "canvas" in locals() else object):
-    pass
 
 
 def get_styles():

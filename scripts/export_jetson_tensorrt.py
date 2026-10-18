@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+
 from ultralytics import YOLO
 
 
@@ -36,7 +37,7 @@ def export_tensorrt(model_path: Path, half: bool = True, device: int = 0) -> Pat
     print(f"\n[SUCCESS] TensorRT Engine created at: {engine_path.resolve()}")
     print("=" * 65)
     print("To run in-vehicle with CockpitSentinel:")
-    print(f"  python -m cockpit_sentinel.pipeline.live_monitor --source 0 \\")
+    print("  python -m cockpit_sentinel.pipeline.live_monitor --source 0 \\")
     print(f"         --phone-model-path {engine_path} \\")
     print(f"         --smoking-model-path {engine_path} --device 0")
     print("=" * 65 + "\n")

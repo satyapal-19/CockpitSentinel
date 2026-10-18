@@ -1,4 +1,4 @@
-﻿"""
+"""
 Evaluate CockpitSentinel models and fit machine learning classifiers on benchmark datasets.
 
 Datasets evaluated:
@@ -30,7 +30,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
-    classification_report,
     confusion_matrix,
     f1_score,
     precision_score,
@@ -46,17 +45,16 @@ from sklearn.svm import SVC
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from cockpit_sentinel.drowsiness.detector import (
+from cockpit_sentinel.drowsiness.detector import (  # noqa: E402
+    LEFT_EYE,
+    MOUTH,
+    RIGHT_EYE,
     DrowsinessDetector,
+    _estimate_head_yaw,
+    _pixel_points,
     eye_aspect_ratio,
     load_drowsiness_config,
     mouth_aspect_ratio,
-    _estimate_head_yaw,
-    _pixel_points,
-    LEFT_EYE,
-    RIGHT_EYE,
-    MOUTH,
-    HEAD_POSE,
 )
 
 
@@ -249,7 +247,7 @@ def fit_and_evaluate_ml_models(df: pd.DataFrame) -> tuple[dict[str, dict[str, an
     rf_pipe = Pipeline([("scaler", StandardScaler()), ("classifier", models["Random Forest"])])
     rf_pipe.fit(X, y)
     importances = rf_pipe.named_steps["classifier"].feature_importances_
-    results["feature_importances"] = dict(zip(feature_cols, [float(x) for x in importances]))
+    results["feature_importances"] = dict(zip(feature_cols, [float(x) for x in importances], strict=False))
 
     return results, best_pipeline
 

@@ -11,6 +11,8 @@ services:
     healthCheckPath: /api/status
     autoDeploy: true
     envVars:
+      - key: PORT
+        value: 10000
       - key: DATABASE_BACKEND
         value: auto
       - key: LOG_LEVEL

@@ -21,7 +21,6 @@ from typing import Any
 
 import numpy as np
 
-
 PHONE_CLASSES = {
     "c1_texting_right": "Texting (Right Hand)",
     "c2_phone_right": "Calling (Right Hand)",

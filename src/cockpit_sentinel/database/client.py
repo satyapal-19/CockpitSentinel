@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 import sqlite3
-from collections.abc import Mapping
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -71,7 +70,6 @@ class DatabaseManager:
         if self.preferred_backend in ("mongodb", "auto") and self.mongodb_uri:
             try:
                 from pymongo import MongoClient
-                from pymongo.errors import PyMongoError
 
                 logger.info("Attempting connection to MongoDB Atlas...")
                 client = MongoClient(
@@ -148,14 +146,10 @@ class DatabaseManager:
                 """
             )
             # Safe migration for existing SQLite database files
-            try:
+            with contextlib.suppress(Exception):
                 cur.execute("ALTER TABLE drivers ADD COLUMN face_embedding TEXT")
-            except Exception:
-                pass
-            try:
+            with contextlib.suppress(Exception):
                 cur.execute("ALTER TABLE drivers ADD COLUMN face_registered INTEGER DEFAULT 0")
-            except Exception:
-                pass
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS routes (
