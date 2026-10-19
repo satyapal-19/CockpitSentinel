@@ -13,8 +13,8 @@ build/
 
 # Environment & Secrets
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 *.pem
 *.key
 *.cert
@@ -24,7 +24,9 @@ build/
 *.secret
 *credentials*.json
 client_secret*.json
+kaggle.json
 id_rsa*
+secrets/
 
 # Logs
 logs/

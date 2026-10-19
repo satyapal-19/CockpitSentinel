@@ -78,9 +78,12 @@ Select **Runtime > Change runtime type > T4 GPU**.
 
 ### Step 2: Download Both Datasets via Roboflow API
 ```python
+import os
 from roboflow import Roboflow
 
-rf = Roboflow(api_key="PB8gWnTTkNlkxmSOpsXH")
+# Load API key securely from environment or Colab secrets
+api_key = os.environ.get("ROBOFLOW_API_KEY", "YOUR_ROBOFLOW_API_KEY")
+rf = Roboflow(api_key=api_key)
 
 # 1. Base smoking dataset
 base_proj = rf.workspace("satyapal-gaikwad").project("driver-smoking-phoneuse-earphone-detection-9nlii-oscoe")
