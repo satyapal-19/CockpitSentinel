@@ -31,6 +31,7 @@ secrets/
 # Logs
 logs/
 *.log
+runs/
 
 # Data & models (stored on D: drive)
 data/

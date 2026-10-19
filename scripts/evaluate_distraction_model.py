@@ -63,6 +63,23 @@ def evaluate_distraction_model(
             "mAP50_95": ap,
         }
 
+    # Calculate target distraction metrics (smoke and phone only, excluding earphone)
+    target_classes = [c for c in class_metrics.keys() if ("smoke" in c.lower() or "phone" in c.lower()) and "ear" not in c.lower()]
+    if target_classes:
+        t_prec = sum(class_metrics[c]["precision"] for c in target_classes) / len(target_classes)
+        t_rec = sum(class_metrics[c]["recall"] for c in target_classes) / len(target_classes)
+        t_map50 = sum(class_metrics[c]["mAP50"] for c in target_classes) / len(target_classes)
+        t_f1 = 2 * (t_prec * t_rec) / (t_prec + t_rec + 1e-16)
+        target_metrics = {
+            "classes": target_classes,
+            "precision": t_prec,
+            "recall": t_rec,
+            "f1_score": t_f1,
+            "mAP50": t_map50,
+        }
+    else:
+        target_metrics = {}
+
     overall_metrics = {
         "model_path": str(weights_path),
         "dataset_yaml": str(data_yaml),
@@ -75,6 +92,7 @@ def evaluate_distraction_model(
         "f1_score": float(
             2 * (metrics.box.mp * metrics.box.mr) / (metrics.box.mp + metrics.box.mr + 1e-16)
         ),
+        "target_distractions": target_metrics,
         "inference_speed_ms": {
             "preprocess": float(metrics.speed.get("preprocess", 0.0)),
             "inference": float(metrics.speed.get("inference", 0.0)),
@@ -91,6 +109,13 @@ def evaluate_distraction_model(
     print(f"Overall F1-Score      : {overall_metrics['f1_score']*100:.2f}%")
     print(f"Overall mAP@50        : {overall_metrics['mAP50']*100:.2f}%")
     print(f"Overall mAP@50-95     : {overall_metrics['mAP50_95']*100:.2f}%")
+    if target_metrics:
+        print("-" * 85)
+        print(f"CORE TARGET DISTRACTIONS ({', '.join(target_classes)}):")
+        print(f"Target Precision (P)  : {target_metrics['precision']*100:.2f}%")
+        print(f"Target Recall (R)     : {target_metrics['recall']*100:.2f}%")
+        print(f"Target F1-Score       : {target_metrics['f1_score']*100:.2f}%")
+        print(f"Target mAP@50         : {target_metrics['mAP50']*100:.2f}%")
     print("-" * 85)
     print(f"{'Class Name':<16} {'Precision':<12} {'Recall':<12} {'F1-Score':<12} {'mAP@50':<12} {'mAP@50-95':<12}")
     print("-" * 85)
