@@ -32,7 +32,7 @@ logs/
 
 # Data & models (stored on D: drive)
 data/
-models/
+/models/
 experiments/
 
 # ML artifacts
