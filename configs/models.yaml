@@ -29,3 +29,9 @@ trained:
     source: ultralytics-yolo11
     purpose: high-precision balanced phone and smoking distraction detection
 
+  yolo11s_coordatt:
+    path: "{models_root}/trained/yolo11s_coordatt/best.pt"
+    openvino_path: "{models_root}/trained/yolo11s_coordatt/best_openvino_model"
+    source: ultralytics-yolo11-coordatt
+    purpose: state-of-the-art coordinate-attention driver distraction detection (96.3% phone precision)
+
