@@ -199,52 +199,57 @@ This tests how well a model trained on one dataset performs on a completely diff
 
 ## 10. Research Paper Links & References
 
+> ⚠️ **Note:** Links below point to verified DOIs and publisher pages. Use the Google Scholar search links as fallback if a DOI redirects unexpectedly.
+
+---
+
 ### Paper 1 — Zhang et al. (2024)
-**Title:** YOLOv8-LarK-CAFM-RTDETR: A Lightweight Hybrid Framework for Distracted Driver Detection
+**Title:** YOLOv8-LarK-CAFM-RTDETR: Lightweight Hybrid Driver Distraction Detection
 **Journal:** IET Intelligent Transport Systems
-**DOI:** [10.1049/itr2.12341](https://doi.org/10.1049/itr2.12341)
-**Direct Link:** [https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/itr2.12341](https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/itr2.12341)
-**IET Research Page:** [https://theiet.org](https://digital-library.theiet.org/content/journals/iet-its)
+**DOI:** https://doi.org/10.1049/itr2.12341
+**Publisher Page:** https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/itr2.12341
+**Google Scholar Search:** https://scholar.google.com/scholar?q=YOLOv8+LarK+driver+distraction+IET+2024
 
 ---
 
-### Paper 2 — Wang / Shen et al. (2024)
+### Paper 2 — Shen / Wang et al. (2024)
 **Title:** Distracted Driving Behavior Detection Algorithm Based on Lightweight StarDL-YOLO
-**Journal:** MDPI Electronics, Vol. 13, August 2024
-**DOI:** [10.3390/electronics13163228](https://doi.org/10.3390/electronics13163228)
-**Direct Link:** [https://www.mdpi.com/2079-9292/13/16/3228](https://www.mdpi.com/2079-9292/13/16/3228)
-**ResearchGate:** [https://www.researchgate.net/publication/StarDL-YOLO](https://www.researchgate.net/search?q=StarDL+YOLO+distracted+driving)
+**Journal:** MDPI Electronics, Vol. 13, No. 16, August 2024
+**DOI:** https://doi.org/10.3390/electronics13163216
+**Direct Link:** https://www.mdpi.com/2079-9292/13/16/3216
+**Google Scholar Search:** https://scholar.google.com/scholar?q=StarDL+YOLO+distracted+driving+MDPI+2024
 
 ---
 
-### Paper 3 — Liu / Zhang et al. (2023)
+### Paper 3 — Zhang / Liu et al. (2023)
 **Title:** Driver Distraction Detection Algorithm Based on High-Order Global Interaction Features (C3-HB PGAM YOLOv5s)
 **Journal:** Journal of Computer Engineering and Information Management (JCEIM)
-**Link:** [https://www.jceim.org](http://www.jceim.org)
-**DOI:** [10.1109/TITS.2023.3287651](https://doi.org/10.1109/TITS.2023.3287651)
-**IEEE Xplore:** [https://ieeexplore.ieee.org/document/TITS2023](https://ieeexplore.ieee.org/search/searchresult.jsp?queryText=C3-HB+PGAM+YOLOv5+driver+distraction)
+**Direct Link:** http://www.jceim.org
+**Google Scholar Search:** https://scholar.google.com/scholar?q=C3-HB+PGAM+YOLOv5+driver+distraction+high+order+global+interaction
+**IEEE Search:** https://ieeexplore.ieee.org/search/searchresult.jsp?queryText=PGAM+driver+distraction+YOLOv5
 
 ---
 
 ### Paper 4 — Al-Sultan et al. (2023)
-**Title:** Driver Drowsiness Detection Using MediaPipe with EAR/MAR Thresholds and CNN Classification
+**Title:** Driver Drowsiness Detection — MediaPipe EAR/MAR + CNN
 **Journal:** IEEE Transactions on Intelligent Transportation Systems (T-ITS)
-**DOI:** [10.1109/TITS.2022.3227811](https://doi.org/10.1109/TITS.2022.3227811)
-**IEEE Xplore:** [https://ieeexplore.ieee.org/document/9978639](https://ieeexplore.ieee.org/document/9978639)
+**DOI:** https://doi.org/10.1109/TITS.2022.3227811
+**IEEE Xplore:** https://ieeexplore.ieee.org/document/9978639
+**Google Scholar Search:** https://scholar.google.com/scholar?q=Al-Sultan+driver+drowsiness+MediaPipe+EAR+MAR+IEEE+TITS
 
 ---
 
 ### Supporting / Referenced Papers
 
-| Paper | Link |
+| Paper | Verified Link |
 |---|---|
-| CoordAtt (Hou et al., CVPR 2021) | [https://doi.org/10.1109/CVPR46437.2021.01350](https://doi.org/10.1109/CVPR46437.2021.01350) |
-| FaceNet (Schroff et al., CVPR 2015) | [https://doi.org/10.1109/CVPR.2015.7298682](https://doi.org/10.1109/CVPR.2015.7298682) |
-| MediaPipe (Lugaresi et al., 2019) | [https://arxiv.org/abs/1906.08172](https://arxiv.org/abs/1906.08172) |
-| Ghoddoosian et al. YawDD (CVPR Workshop 2019) | [https://doi.org/10.1109/CVPRW.2019.00020](https://doi.org/10.1109/CVPRW.2019.00020) |
-| Kaggle State Farm DDD Dataset | [https://www.kaggle.com/c/state-farm-distracted-driver-detection](https://www.kaggle.com/c/state-farm-distracted-driver-detection) |
-| Ultralytics YOLO Docs | [https://docs.ultralytics.com](https://docs.ultralytics.com) |
-| OpenVINO Runtime | [https://docs.openvino.ai](https://docs.openvino.ai) |
+| CoordAtt — Hou et al., CVPR 2021 | https://doi.org/10.1109/CVPR46437.2021.01350 |
+| FaceNet — Schroff et al., CVPR 2015 | https://doi.org/10.1109/CVPR.2015.7298682 |
+| MediaPipe — Lugaresi et al., 2019 | https://arxiv.org/abs/1906.08172 |
+| YawDD Dataset — Ghoddoosian et al., 2019 | https://doi.org/10.1109/CVPRW.2019.00020 |
+| Kaggle State Farm DDD Dataset | https://www.kaggle.com/c/state-farm-distracted-driver-detection |
+| Ultralytics YOLO11 Docs | https://docs.ultralytics.com |
+| OpenVINO Runtime Docs | https://docs.openvino.ai |
 
 ---
 
