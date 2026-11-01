@@ -171,5 +171,13 @@ urllib3==2.7.0
 webencodings==0.5.1
     # via bleach
 
+# Dashboard, Database & Biometrics
+fastapi>=0.100
+uvicorn>=0.20
+pydantic>=2.0
+pymongo>=4.0
+facenet-pytorch>=2.5
+httpx>=0.24
+
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools
