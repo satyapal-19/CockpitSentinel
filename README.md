@@ -7,7 +7,6 @@ sdk: docker
 app_port: 7860
 pinned: false
 ---
-
 <h1 align="center">
   🚗 CockpitSentinel
 </h1>
@@ -676,18 +675,23 @@ For machines with an NVIDIA GPU:
 You can launch CockpitSentinel directly from either **Command Prompt (CMD)** or **PowerShell**:
 
 ### 1. In-Cabin Edge Desktop Monitor (OpenCV GUI Window)
+
 Activates the virtual environment and immediately launches the real-time OpenCV desktop monitor with MediaPipe FaceMesh, YOLO11 phone detection, distraction detection, and Biometric Face ID:
 
 **If you are using Command Prompt (`cmd.exe`):**
+
 ```cmd
 .\scripts\run_webcam_monitor.bat
 ```
+
 *(or direct: `.\.venv\Scripts\python.exe scripts\run_drowsiness_monitor.py --source 0`)*
 
 **If you are using PowerShell (`pwsh`):**
+
 ```powershell
 .\scripts\run_live_monitor.ps1
 ```
+
 *(or: `.\.venv\Scripts\Activate.ps1; .\scripts\run_webcam_monitor.ps1`)*
 
 > **Controls:** Click into the camera window and press **`Q`** or **`Esc`** to stop monitoring and save trip telemetry.
@@ -695,14 +699,17 @@ Activates the virtual environment and immediately launches the real-time OpenCV 
 ---
 
 ### 2. Universal Web Live Monitor (Chrome HUD at `http://localhost:8000/monitor`)
+
 Activates the virtual environment, launches the FastAPI server on port 8000, and immediately opens the In-Cabin Web HUD in Google Chrome:
 
 **If you are using Command Prompt (`cmd.exe`):**
+
 ```cmd
 .\scripts\run_live_monitor.bat -Web
 ```
 
 **If you are using PowerShell (`pwsh`):**
+
 ```powershell
 .\scripts\run_live_monitor.ps1 -Web
 ```
@@ -714,7 +721,7 @@ Activates the virtual environment, launches the FastAPI server on port 8000, and
 > [!IMPORTANT]
 > **Why Chrome says `ERR_CONNECTION_REFUSED`:**
 > `http://localhost:8000/monitor` requires the local FastAPI server to be running. If only the desktop OpenCV monitor was started, the web server is not running on port 8000. Use the Web Live Monitor command above.
-> 
+>
 > **Camera Contention Notice:** Windows grants exclusive hardware lock on webcams. Do not run the OpenCV window and Chrome Web HUD simultaneously with the same camera index; close one before opening the other.
 
 ---

@@ -81,6 +81,35 @@ class FaceIdentifier:
             )
         return self._mtcnn
 
+    def _forward_face_tensor(self, face_tensor: torch.Tensor | np.ndarray) -> np.ndarray | None:
+        """Forward a [3, 160, 160] or [1, 3, 160, 160] face tensor through FaceNet."""
+        try:
+            if isinstance(face_tensor, torch.Tensor):
+                if face_tensor.dim() == 3:
+                    face_tensor = face_tensor.unsqueeze(0)
+                face_np = face_tensor.detach().cpu().numpy().astype(np.float32)
+            else:
+                face_np = np.asarray(face_tensor, dtype=np.float32)
+                if face_np.ndim == 3:
+                    if face_np.shape[2] == 3:  # H, W, C -> C, H, W
+                        face_np = np.transpose(face_np, (2, 0, 1))
+                    face_np = np.expand_dims(face_np, axis=0)
+
+            if self._dnn_model is not None:
+                self._dnn_model.setInput(face_np)
+                embedding = self._dnn_model.forward().flatten()
+            else:
+                t = torch.from_numpy(face_np).to(self.device)
+                with torch.inference_mode():
+                    embedding = self.model(t).cpu().numpy().flatten()
+
+            norm = np.linalg.norm(embedding)
+            if norm > 1e-6:
+                return embedding / norm
+        except Exception as exc:
+            logger.debug("Forward face embedding exception: %s", exc)
+        return None
+
     def extract_embedding(self, image: np.ndarray) -> np.ndarray | None:
         """Extract a 512-dimensional L2-normalized face embedding from a frame.
 
@@ -93,10 +122,10 @@ class FaceIdentifier:
         if image is None or image.size == 0:
             return None
 
-        # Downscale large frames to max 320px for rapid, low-memory MTCNN processing on CPU
+        # Downscale ultra-high-resolution frames to max 720px for fast MTCNN execution while preserving face details
         h, w = image.shape[:2]
-        if max(h, w) > 320:
-            scale = 320.0 / max(h, w)
+        if max(h, w) > 720:
+            scale = 720.0 / max(h, w)
             image = cv2.resize(image, (int(w * scale), int(h * scale)))
 
         # Convert to RGB if 3 channels
@@ -107,111 +136,59 @@ class FaceIdentifier:
 
         h, w = rgb_image.shape[:2]
 
-        # 0. Fast Path: If image is already a pre-cropped face (square-ish or <= 240px),
-        # directly feed into InceptionResnetV1 in ~30ms without expensive MTCNN pyramid search!
-        is_pre_cropped = (w <= 240 and h <= 240) or (0.7 <= (w / max(1, h)) <= 1.4)
-        if self._dnn_model is not None and is_pre_cropped and min(h, w) >= 40:
-            try:
-                blob = cv2.dnn.blobFromImage(
-                    rgb_image,
-                    1.0 / 128.0,
-                    (160, 160),
-                    mean=(127.5, 127.5, 127.5),
-                    swapRB=False,
-                )
-                self._dnn_model.setInput(blob)
-                embedding = self._dnn_model.forward().flatten()
-                norm = np.linalg.norm(embedding)
-                if norm > 1e-6:
-                    return embedding / norm
-            except Exception as exc:
-                logger.debug("cv2.dnn fast-path face extraction exception: %s", exc)
-        elif is_pre_cropped and min(h, w) >= 40:
-            try:
-                resized = cv2.resize(rgb_image, (160, 160))
-                tensor = (
-                    torch.from_numpy(resized)
-                    .permute(2, 0, 1)
-                    .float()
-                    .sub(127.5)
-                    .div(128.0)
-                    .unsqueeze(0)
-                    .to(self.device)
-                )
-                with torch.inference_mode():
-                    embedding = self.model(tensor).cpu().numpy().flatten()
-                norm = np.linalg.norm(embedding)
-                if norm > 1e-6:
-                    return embedding / norm
-            except Exception as exc:
-                logger.debug("Fast-path face extraction exception: %s", exc)
-
+        # 1. Primary: High-accuracy MTCNN face detection, crop, and alignment
         try:
-            # 1. Primary: Try MTCNN aligned crop
             face_tensor = self.mtcnn(rgb_image)
             if face_tensor is not None:
-                if len(face_tensor.shape) == 3:
-                    face_tensor = face_tensor.unsqueeze(0)
-                face_tensor = face_tensor.to(self.device)
-                with torch.inference_mode():
-                    embedding = self.model(face_tensor).cpu().numpy().flatten()
-                norm = np.linalg.norm(embedding)
-                if norm > 1e-6:
-                    return embedding / norm
+                embedding = self._forward_face_tensor(face_tensor)
+                if embedding is not None:
+                    return embedding
         except Exception as exc:
-            logger.debug("MTCNN detection exception: %s", exc)
+            logger.debug("MTCNN primary detection exception: %s", exc)
 
-        # 2. Secondary Fallback: OpenCV Haar Cascade + aligned crop
+        # 2. Secondary Fallback: OpenCV Haar Cascade face detector
         if self._haar_cascade is not None:
             try:
                 gray = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2GRAY)
                 faces = self._haar_cascade.detectMultiScale(
-                    gray, scaleFactor=1.1, minNeighbors=4, minSize=(60, 60)
+                    gray, scaleFactor=1.1, minNeighbors=4, minSize=(50, 50)
                 )
                 if len(faces) > 0:
-                    x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
-                    # Add 25% margin around Haar box and try MTCNN alignment on crop
-                    pad_x = int(w * 0.25)
-                    pad_y = int(h * 0.25)
+                    x, y, fw, fh = max(faces, key=lambda f: f[2] * f[3])
+                    # Add 25% margin around Haar box
+                    pad_x = int(fw * 0.25)
+                    pad_y = int(fh * 0.25)
                     y1 = max(0, y - pad_y)
-                    y2 = min(rgb_image.shape[0], y + h + pad_y)
+                    y2 = min(rgb_image.shape[0], y + fh + pad_y)
                     x1 = max(0, x - pad_x)
-                    x2 = min(rgb_image.shape[1], x + w + pad_x)
+                    x2 = min(rgb_image.shape[1], x + fw + pad_x)
                     face_crop = rgb_image[y1:y2, x1:x2]
 
+                    # Try MTCNN on localized crop
                     try:
                         face_tensor = self.mtcnn(face_crop)
                         if face_tensor is not None:
-                            if len(face_tensor.shape) == 3:
-                                face_tensor = face_tensor.unsqueeze(0)
-                            face_tensor = face_tensor.to(self.device)
-                            with torch.inference_mode():
-                                embedding = self.model(face_tensor).cpu().numpy().flatten()
-                            norm = np.linalg.norm(embedding)
-                            if norm > 1e-6:
-                                return embedding / norm
+                            embedding = self._forward_face_tensor(face_tensor)
+                            if embedding is not None:
+                                return embedding
                     except Exception:
                         pass
 
-                    # Fallback to direct resize if MTCNN on crop also failed
-                    crop = rgb_image[y : y + h, x : x + w]
-                    resized = cv2.resize(crop, (160, 160))
-                    tensor = (
-                        torch.from_numpy(resized)
-                        .permute(2, 0, 1)
-                        .float()
-                        .sub(127.5)
-                        .div(128.0)
-                        .unsqueeze(0)
-                        .to(self.device)
-                    )
-                    with torch.inference_mode():
-                        embedding = self.model(tensor).cpu().numpy().flatten()
-                    norm = np.linalg.norm(embedding)
-                    if norm > 1e-6:
-                        return embedding / norm
+                    # Direct normalized crop
+                    resized = cv2.resize(face_crop, (160, 160))
+                    normalized = (resized.astype(np.float32) - 127.5) / 128.0
+                    return self._forward_face_tensor(normalized)
             except Exception as exc:
                 logger.debug("Haar cascade face extraction exception: %s", exc)
+
+        # 3. Tertiary: If input is already an explicit cropped thumbnail (<= 160px square)
+        if w <= 160 and h <= 160 and 0.8 <= (w / max(1, h)) <= 1.25 and min(h, w) >= 40:
+            try:
+                resized = cv2.resize(rgb_image, (160, 160))
+                normalized = (resized.astype(np.float32) - 127.5) / 128.0
+                return self._forward_face_tensor(normalized)
+            except Exception as exc:
+                logger.debug("Cropped thumbnail extraction exception: %s", exc)
 
         return None
 
@@ -259,6 +236,56 @@ class FaceIdentifier:
             if not driver.face_registered or not driver.face_embedding:
                 continue
             sim = self.compute_similarity(current_emb, driver.face_embedding)
+            if sim > best_score:
+                best_score = sim
+                best_driver = driver
+
+        if best_driver is not None and best_score >= thresh:
+            return best_driver, best_score
+
+        return None, max(0.0, best_score)
+
+    def identify_from_frames(
+        self,
+        frames: list[np.ndarray],
+        candidates: list[DriverProfile],
+        threshold: float | None = None,
+    ) -> tuple[DriverProfile | None, float]:
+        """Match multiple cabin video frames against enrolled driver profiles using averaged embeddings.
+
+        Args:
+            frames: Sequence of video frames (OpenCV BGR).
+            candidates: List of registered driver profiles from database.
+            threshold: Minimum cosine similarity to accept match.
+
+        Returns:
+            (best_matched_driver, confidence_score) or (None, best_score).
+        """
+        if not frames or not candidates:
+            return None, 0.0
+
+        embeddings: list[np.ndarray] = []
+        for f in frames:
+            emb = self.extract_embedding(f)
+            if emb is not None:
+                embeddings.append(emb)
+
+        if not embeddings:
+            return None, 0.0
+
+        avg_emb = np.mean(embeddings, axis=0)
+        norm = np.linalg.norm(avg_emb)
+        if norm > 1e-6:
+            avg_emb = avg_emb / norm
+
+        thresh = threshold if threshold is not None else self.similarity_threshold
+        best_driver: DriverProfile | None = None
+        best_score: float = -1.0
+
+        for driver in candidates:
+            if not getattr(driver, "face_registered", False) or not getattr(driver, "face_embedding", None):
+                continue
+            sim = self.compute_similarity(avg_emb, driver.face_embedding)
             if sim > best_score:
                 best_score = sim
                 best_driver = driver

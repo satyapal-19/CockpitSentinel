@@ -138,6 +138,24 @@ def test_enroll_driver_face():
     assert pytest.approx(compute_similarity(updated.face_embedding, mock_vec), 1e-4) == 1.0
 
 
+def test_identify_from_frames_with_mocked_extractor():
+    identifier = FaceIdentifier()
+    target_vec = [1.0] + [0.0] * 511
+    identifier.extract_embedding = MagicMock(return_value=target_vec)
+    driver = DriverProfile(
+        id="drv-test",
+        name="Test Driver",
+        license_number="DL-01",
+        face_embedding=target_vec,
+        face_registered=True,
+    )
+    frames = [np.zeros((100, 100, 3), dtype=np.uint8) for _ in range(3)]
+    matched, score = identifier.identify_from_frames(frames, [driver], threshold=0.60)
+    assert matched is not None
+    assert matched.id == "drv-test"
+    assert pytest.approx(score, 1e-4) == 1.0
+
+
 @pytest.mark.skipif(not SAMPLE_FACE_PATH.exists(), reason="Sample face dataset image not available")
 def test_real_image_embedding_extraction():
     img = cv2.imread(str(SAMPLE_FACE_PATH))

@@ -35,3 +35,10 @@ trained:
     source: ultralytics-yolo11-coordatt
     purpose: state-of-the-art coordinate-attention driver distraction detection (96.3% phone precision)
 
+  yolo11_smoking:
+    path: "{models_root}/trained/yolo11_smoking/best.pt"
+    openvino_path: "{models_root}/trained/yolo11_smoking/best_openvino_model"
+    onnx_path: "{models_root}/trained/yolo11_smoking/best.onnx"
+    source: ultralytics-yolo11
+    purpose: specialized smoking, cigarette, and face detection fine-tuned on custom smoking dataset
+

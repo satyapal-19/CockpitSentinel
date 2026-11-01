@@ -64,7 +64,7 @@ def evaluate_distraction_model(
         }
 
     # Calculate target distraction metrics (smoke and phone only, excluding earphone)
-    target_classes = [c for c in class_metrics.keys() if ("smoke" in c.lower() or "phone" in c.lower()) and "ear" not in c.lower()]
+    target_classes = [c for c in class_metrics if ("smoke" in c.lower() or "phone" in c.lower()) and "ear" not in c.lower()]
     if target_classes:
         t_prec = sum(class_metrics[c]["precision"] for c in target_classes) / len(target_classes)
         t_rec = sum(class_metrics[c]["recall"] for c in target_classes) / len(target_classes)
