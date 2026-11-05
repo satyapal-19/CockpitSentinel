@@ -32,30 +32,58 @@ class FaceIdentifier:
 
         logger.info("Initializing FaceIdentifier on device: %s", self.device)
 
-        # Check for lightweight ONNX FaceNet model for sub-100ms low-memory CPU inference
+        # Check for lightweight ONNX FaceNet models (quantized INT8 or FP32)
+        self._ort_session = None
+        self._ort_input_name = None
         self._dnn_model = None
-        onnx_candidates = [
+
+        int8_candidates = [
+            Path("weights/pretrained/facenet_int8.onnx"),
+            Path(__file__).resolve().parents[3] / "weights" / "pretrained" / "facenet_int8.onnx",
+        ]
+        fp32_candidates = [
             Path("weights/pretrained/facenet.onnx"),
             Path(__file__).resolve().parents[3] / "weights" / "pretrained" / "facenet.onnx",
         ]
-        for opath in onnx_candidates:
-            if opath.exists():
-                try:
-                    self._dnn_model = cv2.dnn.readNetFromONNX(str(opath))
-                    logger.info("Loaded FaceNet ONNX model via cv2.dnn: %s", opath)
+
+        # 1. Try ONNX Runtime with quantized INT8 model (~22.8MB, ~89MB peak RAM, sub-20ms)
+        try:
+            import onnxruntime as ort
+
+            for opath in int8_candidates:
+                if opath.exists():
+                    sess_options = ort.SessionOptions()
+                    sess_options.intra_op_num_threads = 2
+                    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                    self._ort_session = ort.InferenceSession(
+                        str(opath), sess_options=sess_options, providers=["CPUExecutionProvider"]
+                    )
+                    self._ort_input_name = self._ort_session.get_inputs()[0].name
+                    logger.info("Loaded quantized FaceNet INT8 model via ONNX Runtime: %s", opath)
                     break
-                except Exception as e:
-                    logger.warning("Failed to load FaceNet ONNX model: %s", e)
+        except Exception as e:
+            logger.debug("ONNX Runtime INT8 load notice: %s", e)
+
+        # 2. Try OpenCV cv2.dnn with FP32 ONNX model if INT8 session not loaded
+        if self._ort_session is None:
+            for opath in fp32_candidates:
+                if opath.exists():
+                    try:
+                        self._dnn_model = cv2.dnn.readNetFromONNX(str(opath))
+                        logger.info("Loaded FaceNet ONNX model via cv2.dnn: %s", opath)
+                        break
+                    except Exception as e:
+                        logger.warning("Failed to load FaceNet ONNX model: %s", e)
 
         # Lazy-loaded PyTorch models to conserve memory on 512MB cloud instances
         self._model: InceptionResnetV1 | None = None
         self._mtcnn: MTCNN | None = None
 
-        if self._dnn_model is None:
-            # If ONNX is not available, initialize PyTorch InceptionResnetV1
+        if self._ort_session is None and self._dnn_model is None:
+            # If neither ONNX is available, initialize PyTorch InceptionResnetV1
             self._model = InceptionResnetV1(pretrained="vggface2").eval().to(self.device)
 
-        # OpenCV Haar fallback face detector
+        # OpenCV Haar face detector (fast ~5ms, zero extra memory)
         self._haar_cascade = None
         try:
             cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
@@ -95,7 +123,9 @@ class FaceIdentifier:
                         face_np = np.transpose(face_np, (2, 0, 1))
                     face_np = np.expand_dims(face_np, axis=0)
 
-            if self._dnn_model is not None:
+            if self._ort_session is not None:
+                embedding = self._ort_session.run(None, {self._ort_input_name: face_np})[0].flatten()
+            elif self._dnn_model is not None:
                 self._dnn_model.setInput(face_np)
                 embedding = self._dnn_model.forward().flatten()
             else:
@@ -122,12 +152,6 @@ class FaceIdentifier:
         if image is None or image.size == 0:
             return None
 
-        # Downscale ultra-high-resolution frames to max 720px for fast MTCNN execution while preserving face details
-        h, w = image.shape[:2]
-        if max(h, w) > 720:
-            scale = 720.0 / max(h, w)
-            image = cv2.resize(image, (int(w * scale), int(h * scale)))
-
         # Convert to RGB if 3 channels
         if len(image.shape) == 3 and image.shape[2] == 3:
             rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -136,22 +160,29 @@ class FaceIdentifier:
 
         h, w = rgb_image.shape[:2]
 
-        # 1. Primary: High-accuracy MTCNN face detection, crop, and alignment
-        try:
-            face_tensor = self.mtcnn(rgb_image)
-            if face_tensor is not None:
-                embedding = self._forward_face_tensor(face_tensor)
-                if embedding is not None:
-                    return embedding
-        except Exception as exc:
-            logger.debug("MTCNN primary detection exception: %s", exc)
+        # 1. Fast Path: If input is already an explicit cropped thumbnail (e.g. 160x160 from frontend/MediaPipe)
+        if w <= 220 and h <= 220 and 0.7 <= (w / max(1, h)) <= 1.4 and min(h, w) >= 40:
+            try:
+                resized = cv2.resize(rgb_image, (160, 160))
+                normalized = (resized.astype(np.float32) - 127.5) / 128.0
+                emb = self._forward_face_tensor(normalized)
+                if emb is not None:
+                    return emb
+            except Exception as exc:
+                logger.debug("Cropped thumbnail extraction exception: %s", exc)
 
-        # 2. Secondary Fallback: OpenCV Haar Cascade face detector
+        # Downscale high-resolution frames to max 720px for fast face detection
+        if max(h, w) > 720:
+            scale = 720.0 / max(h, w)
+            rgb_image = cv2.resize(rgb_image, (int(w * scale), int(h * scale)))
+            h, w = rgb_image.shape[:2]
+
+        # 2. Primary for full images: OpenCV Haar Cascade detector (Fast ~5ms, zero extra memory)
         if self._haar_cascade is not None:
             try:
                 gray = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2GRAY)
                 faces = self._haar_cascade.detectMultiScale(
-                    gray, scaleFactor=1.1, minNeighbors=4, minSize=(50, 50)
+                    gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40)
                 )
                 if len(faces) > 0:
                     x, y, fw, fh = max(faces, key=lambda f: f[2] * f[3])
@@ -164,31 +195,23 @@ class FaceIdentifier:
                     x2 = min(rgb_image.shape[1], x + fw + pad_x)
                     face_crop = rgb_image[y1:y2, x1:x2]
 
-                    # Try MTCNN on localized crop
-                    try:
-                        face_tensor = self.mtcnn(face_crop)
-                        if face_tensor is not None:
-                            embedding = self._forward_face_tensor(face_tensor)
-                            if embedding is not None:
-                                return embedding
-                    except Exception:
-                        pass
-
-                    # Direct normalized crop
                     resized = cv2.resize(face_crop, (160, 160))
                     normalized = (resized.astype(np.float32) - 127.5) / 128.0
-                    return self._forward_face_tensor(normalized)
+                    emb = self._forward_face_tensor(normalized)
+                    if emb is not None:
+                        return emb
             except Exception as exc:
                 logger.debug("Haar cascade face extraction exception: %s", exc)
 
-        # 3. Tertiary: If input is already an explicit cropped thumbnail (<= 160px square)
-        if w <= 160 and h <= 160 and 0.8 <= (w / max(1, h)) <= 1.25 and min(h, w) >= 40:
-            try:
-                resized = cv2.resize(rgb_image, (160, 160))
-                normalized = (resized.astype(np.float32) - 127.5) / 128.0
-                return self._forward_face_tensor(normalized)
-            except Exception as exc:
-                logger.debug("Cropped thumbnail extraction exception: %s", exc)
+        # 3. Fallback: MTCNN face detection (only if Haar didn't detect face and MTCNN available)
+        try:
+            face_tensor = self.mtcnn(rgb_image)
+            if face_tensor is not None:
+                embedding = self._forward_face_tensor(face_tensor)
+                if embedding is not None:
+                    return embedding
+        except Exception as exc:
+            logger.debug("MTCNN fallback detection exception: %s", exc)
 
         return None
 
@@ -233,7 +256,7 @@ class FaceIdentifier:
         best_score: float = -1.0
 
         for driver in candidates:
-            if not driver.face_registered or not driver.face_embedding:
+            if not getattr(driver, "face_registered", False) or not getattr(driver, "face_embedding", None):
                 continue
             sim = self.compute_similarity(current_emb, driver.face_embedding)
             if sim > best_score:

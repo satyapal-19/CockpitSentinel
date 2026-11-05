@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -45,6 +46,8 @@ from cockpit_sentinel.database.models import (  # noqa: E402
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 INDEX_HTML_PATH = TEMPLATES_DIR / "index.html"
 MONITOR_HTML_PATH = TEMPLATES_DIR / "monitor.html"
+
+logger = logging.getLogger(__name__)
 
 
 async def _async_prewarm_models() -> None:
@@ -124,6 +127,7 @@ class DriverUpdateRequest(BaseModel):
 
 class FaceEnrollRequest(BaseModel):
     image_base64: str = Field(..., description="Base64-encoded image data string")
+    threshold: float | None = Field(default=0.45, description="Biometric matching similarity threshold")
 
 
 class RouteCreateRequest(BaseModel):
@@ -343,7 +347,8 @@ def identify_face(req: FaceEnrollRequest) -> dict[str, Any]:
         drivers = db.list_drivers()
         identifier = get_face_identifier()
 
-        matched_driver, score = identifier.identify_driver(img, drivers, threshold=0.55)
+        use_thresh = req.threshold if req.threshold is not None else 0.45
+        matched_driver, score = identifier.identify_driver(img, drivers, threshold=use_thresh)
         if matched_driver:
             return {
                 "identified": True,
@@ -358,6 +363,7 @@ def identify_face(req: FaceEnrollRequest) -> dict[str, Any]:
             "message": "No registered driver matched",
         }
     except Exception as exc:
+        logger.error("Face identification error: %s", exc)
         return {
             "identified": False,
             "driver": None,

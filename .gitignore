@@ -77,6 +77,7 @@ weights/*
 !weights/pretrained/
 weights/pretrained/*
 !weights/pretrained/yolo11n.onnx
+!weights/pretrained/facenet_int8.onnx
 !weights/trained/
 weights/trained/*
 !weights/trained/yolo11s_distraction/

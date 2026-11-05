@@ -933,13 +933,55 @@
       showScanningView();
 
       await initCameraStream();
-      populateModalDrivers();
+      if (!enrolledDrivers || enrolledDrivers.length === 0) {
+        await loadMetadata();
+      } else {
+        populateModalDrivers();
+      }
 
-      // Allow camera 700ms to stabilize auto-exposure, then capture snapshot
-      setTimeout(performPreTripFaceScan, 700);
+      waitForFaceAndIdentify();
+    }
+
+    let faceScanCheckInterval = null;
+    function waitForFaceAndIdentify() {
+      if (faceScanCheckInterval) {
+        clearInterval(faceScanCheckInterval);
+        faceScanCheckInterval = null;
+      }
+      document.getElementById('scan-status-text').innerText = 'Initializing in-cabin camera & biometrics...';
+
+      let attempts = 0;
+      faceScanCheckInterval = setInterval(async () => {
+        attempts++;
+        const hasFrame = videoElement && videoElement.videoWidth > 0 && videoElement.readyState >= 2;
+        const hasLandmarks = latestFaceLandmarks && latestFaceLandmarks.length > 0;
+
+        if (hasFrame) {
+          if (hasLandmarks || attempts >= 8) {
+            clearInterval(faceScanCheckInterval);
+            faceScanCheckInterval = null;
+            document.getElementById('scan-status-text').innerText = 'Matching against fleet registry...';
+            await performPreTripFaceScan();
+            return;
+          } else {
+            document.getElementById('scan-status-text').innerText = 'Align your face inside the camera view...';
+          }
+        }
+
+        if (attempts >= 20) {
+          clearInterval(faceScanCheckInterval);
+          faceScanCheckInterval = null;
+          console.warn('Face detection timeout during pre-trip scan');
+          showManualSelectView();
+        }
+      }, 200);
     }
 
     function cancelPreTripScan() {
+      if (faceScanCheckInterval) {
+        clearInterval(faceScanCheckInterval);
+        faceScanCheckInterval = null;
+      }
       if (preTripAutoStartTimer) {
         clearInterval(preTripAutoStartTimer);
         preTripAutoStartTimer = null;
@@ -962,10 +1004,15 @@
     }
 
     function showManualSelectView() {
+      if (faceScanCheckInterval) {
+        clearInterval(faceScanCheckInterval);
+        faceScanCheckInterval = null;
+      }
       if (preTripAutoStartTimer) {
         clearInterval(preTripAutoStartTimer);
         preTripAutoStartTimer = null;
       }
+      populateModalDrivers();
       document.getElementById('scan-view-scanning').classList.add('hidden');
       document.getElementById('scan-view-matched').classList.add('hidden');
       document.getElementById('scan-view-unverified').classList.remove('hidden');
@@ -973,15 +1020,17 @@
 
     function populateModalDrivers() {
       const sel = document.getElementById('modal-driver-select');
+      if (!sel) return;
       sel.innerHTML = '<option value="">Guest Driver (Default Calibrations)</option>';
       enrolledDrivers.forEach(d => {
         const opt = document.createElement('option');
         opt.value = d.id;
-        opt.innerText = `${d.name} (${d.license_number})`;
+        const tag = d.face_registered ? ' [✓ Face Registered]' : '';
+        opt.innerText = `${d.name} (${d.license_number})${tag}`;
         sel.appendChild(opt);
       });
       const topSel = document.getElementById('driver-select');
-      if (topSel.value) {
+      if (topSel && topSel.value) {
         sel.value = topSel.value;
       }
     }
@@ -994,12 +1043,12 @@
         const b64 = getFaceCropSnapshot();
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
 
         const res = await fetch('/api/identify-face', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_base64: b64, threshold: 0.45 }),
+          body: JSON.stringify({ image_base64: b64, threshold: 0.42 }),
           signal: controller.signal
         });
         clearTimeout(timeoutId);
@@ -1069,7 +1118,7 @@
 
     function retryBiometricScan() {
       showScanningView();
-      setTimeout(performPreTripFaceScan, 500);
+      waitForFaceAndIdentify();
     }
 
     function confirmAndStartJourney() {
@@ -1211,17 +1260,20 @@
         if (dRes.ok) {
           enrolledDrivers = await dRes.json();
           const dSel = document.getElementById('driver-select');
+          dSel.innerHTML = '<option value="">Guest Driver (Defaults)</option>';
           enrolledDrivers.forEach(d => {
             const opt = document.createElement('option');
             opt.value = d.id;
             opt.innerText = `${d.name} (${d.license_number})`;
             dSel.appendChild(opt);
           });
+          populateModalDrivers();
         }
         const rRes = await fetch('/api/routes');
         if (rRes.ok) {
           const routes = await rRes.json();
           const rSel = document.getElementById('route-select');
+          rSel.innerHTML = '<option value="">Default Route (Auto-Logged)</option>';
           routes.forEach(r => {
             const opt = document.createElement('option');
             opt.value = r.id;

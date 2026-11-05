@@ -1410,12 +1410,26 @@
         return;
       }
 
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // Scale to max 640px to ensure fast, sub-50KB lightweight uploads
+      const maxDim = 640;
+      let w = video.videoWidth;
+      let h = video.videoHeight;
+      if (w > maxDim || h > maxDim) {
+        if (w >= h) {
+          h = Math.round(h * (maxDim / w));
+          w = maxDim;
+        } else {
+          w = Math.round(w * (maxDim / h));
+          h = maxDim;
+        }
+      }
 
-      enrolledBase64Image = canvas.toDataURL('image/jpeg', 0.92);
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, w, h);
+
+      enrolledBase64Image = canvas.toDataURL('image/jpeg', 0.85);
 
       if (enrollStream) {
         enrollStream.getTracks().forEach(track => track.stop());
@@ -1455,14 +1469,37 @@
 
       const reader = new FileReader();
       reader.onload = function(e) {
-        enrolledBase64Image = e.target.result;
-        placeholder.classList.add('hidden');
-        preview.src = enrolledBase64Image;
-        preview.classList.remove('hidden');
-        btnSave.classList.remove('opacity-50', 'cursor-not-allowed');
-        btnSave.disabled = false;
-        statusText.innerText = `Photo selected (${file.name}). Click Save Face to Profile.`;
-        statusText.className = 'text-[11px] text-emerald-400 font-medium text-center min-h-[16px]';
+        // Downscale large photo uploads to max 640px for lightweight reliable network transmission
+        const img = new Image();
+        img.onload = function() {
+          const maxDim = 640;
+          let w = img.width;
+          let h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w >= h) {
+              h = Math.round(h * (maxDim / w));
+              w = maxDim;
+            } else {
+              w = Math.round(w * (maxDim / h));
+              h = maxDim;
+            }
+          }
+          const offCanvas = document.createElement('canvas');
+          offCanvas.width = w;
+          offCanvas.height = h;
+          const oCtx = offCanvas.getContext('2d');
+          oCtx.drawImage(img, 0, 0, w, h);
+          enrolledBase64Image = offCanvas.toDataURL('image/jpeg', 0.85);
+
+          placeholder.classList.add('hidden');
+          preview.src = enrolledBase64Image;
+          preview.classList.remove('hidden');
+          btnSave.classList.remove('opacity-50', 'cursor-not-allowed');
+          btnSave.disabled = false;
+          statusText.innerText = `Photo selected (${file.name}). Click Save Face to Profile.`;
+          statusText.className = 'text-[11px] text-emerald-400 font-medium text-center min-h-[16px]';
+        };
+        img.src = e.target.result;
       };
       reader.readAsDataURL(file);
     }
@@ -1489,7 +1526,14 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_base64: enrolledBase64Image })
         });
-        const data = await res.json();
+        let data = {};
+        try {
+          data = await res.json();
+        } catch (_) {
+          const txt = await res.text().catch(() => '');
+          data = { message: txt || `Server returned HTTP ${res.status}` };
+        }
+
         if (res.ok && data.success) {
           statusText.innerText = 'Facial biometrics enrolled successfully!';
           statusText.className = 'text-[11px] text-emerald-400 font-bold text-center min-h-[16px]';
@@ -1498,14 +1542,14 @@
             await fetchData();
           }, 900);
         } else {
-          statusText.innerText = 'Enrollment failed: ' + (data.detail || data.message || 'Unknown error');
+          statusText.innerText = 'Enrollment failed: ' + (data.detail || data.message || `Server status ${res.status}`);
           statusText.className = 'text-[11px] text-rose-400 text-center min-h-[16px]';
           btnSave.disabled = false;
           btnSave.classList.remove('opacity-50', 'cursor-not-allowed');
         }
       } catch (err) {
         console.error('Enroll error:', err);
-        statusText.innerText = 'Network error while enrolling face biometrics.';
+        statusText.innerText = 'Network error: ' + (err.message || 'Connection lost');
         statusText.className = 'text-[11px] text-rose-400 text-center min-h-[16px]';
         btnSave.disabled = false;
         btnSave.classList.remove('opacity-50', 'cursor-not-allowed');
